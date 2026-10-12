@@ -27,6 +27,9 @@
 
 ## Chess APIs
 
+For frontend routes, authentication, roles, request/response examples, and
+query parameters, see the [Frontend API Guide](./docs/FRONTEND_API.md).
+
 All match and matchmaking endpoints require a bearer access token. Match
 creation, updates, and deletion are restricted to coaches and admins.
 
