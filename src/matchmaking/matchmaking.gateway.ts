@@ -11,9 +11,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { Server, Socket } from 'socket.io';
 import { Repository } from 'typeorm';
-import { UserRole } from '../common/enums/user-role.enum';
+import { ACCESS_TOKEN_COOKIE, readCookie } from '../auth/auth-cookies';
 import { Match } from '../matches/entities/match.entity';
-import { User } from '../users/entities/user.entity';
 
 interface AccessTokenPayload {
   sub: string;
@@ -27,7 +26,7 @@ const allowedOrigins = (
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-@WebSocketGateway({ cors: { origin: allowedOrigins } })
+@WebSocketGateway({ cors: { origin: allowedOrigins, credentials: true } })
 export class MatchmakingGateway implements OnGatewayConnection {
   @WebSocketServer()
   private server: Server;
@@ -37,13 +36,14 @@ export class MatchmakingGateway implements OnGatewayConnection {
     private readonly config: ConfigService,
     @InjectRepository(Match)
     private readonly matches: Repository<Match>,
-    @InjectRepository(User)
-    private readonly users: Repository<User>,
   ) {}
 
   async handleConnection(client: Socket) {
-    const token: unknown = client.handshake.auth?.token;
-    if (typeof token !== 'string') {
+    const token = readCookie(
+      client.handshake.headers.cookie,
+      ACCESS_TOKEN_COOKIE,
+    );
+    if (!token) {
       client.disconnect(true);
       return;
     }
@@ -92,19 +92,10 @@ export class MatchmakingGateway implements OnGatewayConnection {
     const isPlayer =
       match.whitePlayerId === userId || match.blackPlayerId === userId;
     if (!isPlayer) {
-      const user = await this.users.findOne({
-        where: { id: userId },
-        select: { id: true, role: true },
-      });
-      if (
-        !user ||
-        (user.role !== UserRole.COACH && user.role !== UserRole.ADMIN)
-      ) {
-        return {
-          event: 'watch-match-error',
-          data: 'Only players, coaches, and admins can watch this match',
-        };
-      }
+      return {
+        event: 'watch-match-error',
+        data: 'Only a participant in this match can join its room',
+      };
     }
     await client.join(this.matchRoom(matchId));
     return { event: 'watch-match-ready', data: { matchId } };

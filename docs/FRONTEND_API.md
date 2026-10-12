@@ -20,7 +20,7 @@ origins, including the scheme and port when applicable. For example:
 CORS_ORIGINS=http://localhost:5173,https://chess.example.com
 ```
 
-The development default allows `http://localhost:3000` and
+The development default allows `http://localhost:3001` and
 `http://localhost:5173`. Set the production frontend origin explicitly when
 deploying. The browser's `strict-origin-when-cross-origin` referrer policy is
 normal and does not itself indicate a CORS failure.
@@ -32,7 +32,9 @@ bodies with:
 Content-Type: application/json
 ```
 
-For protected routes, send the access token returned by register/login/refresh:
+For protected routes, enable credentials so the browser sends the HTTP-only
+cookies returned by register/login/refresh. Bearer access tokens remain
+accepted for API clients that do not use browser cookies.
 
 ```http
 Authorization: Bearer <accessToken>
@@ -47,11 +49,13 @@ below show unwrapped payloads unless they explicitly describe pagination.
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| `POST` | `/api/v1/auth/register` | No | Register as a player and receive tokens |
-| `POST` | `/api/v1/auth/login` | No | Sign in and receive tokens |
-| `POST` | `/api/v1/auth/refresh` | No | Rotate tokens using the refresh token |
+| `POST` | `/api/v1/auth/register` | No | Register as a player and set HTTP-only cookies |
+| `POST` | `/api/v1/auth/login` | No | Sign in and set HTTP-only cookies |
+| `POST` | `/api/v1/auth/refresh` | Refresh cookie | Rotate the access and refresh cookies |
 | `POST` | `/api/v1/auth/logout` | Bearer | Revoke the current refresh-token session |
 | `GET` | `/api/v1/auth/profile` | Bearer | Get the identity from the access token |
+
+| `GET` | `/api/v1/me` | Access cookie | Get the authenticated user's ID, email, and role |
 
 ### Register
 
@@ -66,7 +70,7 @@ below show unwrapped payloads unless they explicitly describe pagination.
 Registration does not accept a role. New accounts are assigned `player` and
 start with a rating of 1200.
 
-### Login and token response
+### Login and cookie session
 
 Login body:
 
@@ -77,35 +81,19 @@ Login body:
 }
 ```
 
-Register, login, and refresh return:
-
-```json
-{
-  "accessToken": "<JWT>",
-  "refreshToken": "<JWT>",
-  "tokenType": "Bearer",
-  "expiresIn": "15m"
-}
-```
-
-Refresh body:
-
-```json
-{
-  "refreshToken": "<current-refresh-token>"
-}
-```
-
-Refresh rotates both tokens; replace the stored access and refresh tokens with
-the returned values. Logout returns:
+Register and login set `access_token` and `refresh_token` as HTTP-only,
+`SameSite=Lax` cookies; JWTs are not returned in JSON. Refresh accepts the
+refresh cookie (no request body) and rotates both cookies. The frontend
+retries a protected request once after an access-cookie `401`. Logout returns:
 
 ```json
 { "message": "Logged out successfully" }
 ```
 
-`GET /api/v1/auth/profile` returns the authenticated token identity, currently
-including `userId`, `email`, and `role`. A role change takes effect in newly
-issued tokens; refresh or sign in again to obtain an updated role claim.
+`GET /api/v1/me` returns `userId`, `email`, and the user's current role. Role
+authorization is checked on the backend for every protected request, and the
+frontend redirects students away from coach pages and coach/admin users away
+from the student dashboard.
 
 ## Roles and access
 
@@ -149,7 +137,7 @@ GET /api/v1/matches?page=2&limit=20&search=completed&sortBy=createdAt&sortOrder=
 
 ## Users
 
-All user endpoints require a bearer token.
+All user endpoints require an authenticated cookie session.
 
 | Method | Path | Access | Description |
 | --- | --- | --- | --- |
@@ -207,7 +195,7 @@ Example profile:
 
 ## Matches
 
-All match endpoints require a bearer token. Match creation, update, and deletion
+All match endpoints require an authenticated cookie session. Match creation, update, and deletion
 are restricted to coaches and admins; any authenticated user can list/read them.
 Tournament games are paired automatically and cannot be created or reassigned
 through these routes.
@@ -266,7 +254,7 @@ may make moves or offer/respond to draws.
 
 ## Matchmaking
 
-All matchmaking endpoints require a bearer token.
+All matchmaking endpoints require an authenticated cookie session.
 
 | Method | Path | Access | Description |
 | --- | --- | --- | --- |
@@ -300,9 +288,10 @@ New pairings create an `in_progress` match. When a pairing is created, both
 players receive a `match-found` Socket.IO event containing `{ matchId, match }`
 after the transaction commits. When either player submits a move, both receive
 `game-updated` with `{ matchId }` and can reload the game-state endpoint. Connect
-to the API origin using Socket.IO with the access token in
-`auth: { token: accessToken }`; invalid or expired tokens are disconnected.
-Socket.IO uses the same allowed origins as HTTP CORS.
+to the API origin using Socket.IO with credentials enabled; the browser sends
+the HTTP-only access cookie automatically. Invalid or expired cookies are
+disconnected. Only match participants may join that match's Socket.IO room.
+Socket.IO uses the same credentialed allowed origins as HTTP CORS.
 
 The queue selects the closest eligible rating among waiting players (not FIFO).
 Its acceptable gap starts at
@@ -340,7 +329,7 @@ losses for 0. Rankings sort by points, wins, rating, and name, in that order.
 
 ## Tournaments
 
-All tournament endpoints require a bearer token. Coaches/admins can create,
+All tournament endpoints require an authenticated cookie session. Coaches/admins can create,
 update, start, and delete their tournaments; admins can manage any tournament.
 Players can self-join tournaments while registration is open.
 
@@ -409,7 +398,7 @@ invalid values return HTTP `400`. Common error response:
 
 Other common statuses:
 
-- `401 Unauthorized`: access token absent, invalid, or expired.
+- `401 Unauthorized`: access cookie absent, invalid, or expired.
 - `403 Forbidden`: authenticated role or ownership is insufficient.
 - `404 Not Found`: requested record does not exist.
 - `409 Conflict`: email is already registered.

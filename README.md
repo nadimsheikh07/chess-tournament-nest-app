@@ -36,8 +36,16 @@ Successful single-resource responses use `{ "data": ... }`; paginated
 responses use `{ "data": [...], "meta": { ... } }`. Errors use Nest's
 standard `{ "statusCode": ..., "message": ..., "error": ... }` response.
 
-All match and matchmaking endpoints require a bearer access token. Standalone
-match creation, updates, and deletion are restricted to coaches and admins.
+Log in with an email and password to receive access and refresh JWTs in
+HTTP-only cookies. The browser sends those cookies automatically to protected
+REST endpoints and the Socket.IO server; tokens are not returned in response
+bodies or stored in browser-accessible storage. `GET /api/v1/me` returns the
+current user's ID, email, and role. The API enables credentialed CORS for the
+origins in `CORS_ORIGINS`.
+
+All match and matchmaking endpoints require an authenticated cookie session.
+Standalone match creation, updates, and deletion are restricted to coaches and
+admins. Only match participants can join a match's Socket.IO room.
 
 ### Tournaments
 
@@ -108,6 +116,27 @@ role through profile updates, and the last admin cannot be demoted or deleted.
   draw, and 0 per loss. Rankings sort by points, wins, rating, and name, in
   that order; ranks are sequential. Leaderboard entries are read-only.
 
+### Demo accounts
+
+After configuring the database in `.env`, build the API and seed one coach and
+four student accounts:
+
+```bash
+npm run build
+npm run seed:demo
+```
+
+| Role | Email | Password |
+| --- | --- | --- |
+| Coach | `coach@kingdom.local` | `CoachChess123!` |
+| Student | `student1@kingdom.local` | `StudentChess123!` |
+| Student | `student2@kingdom.local` | `StudentChess123!` |
+| Student | `student3@kingdom.local` | `StudentChess123!` |
+| Student | `student4@kingdom.local` | `StudentChess123!` |
+
+Seeding is repeatable and resets these fixture accounts to the listed
+credentials and roles. Use the accounts for local development only.
+
 ### Creating the initial admin
 
 The `admin` role is the highest-privilege role in this application. After
@@ -134,12 +163,12 @@ belongs to a user. If setup fails, it returns a non-zero exit code.
 
 ### Real-time Socket.IO events
 
-Clients connect to the backend Socket.IO origin with
-`auth: { "token": "<access-token>" }`. The server authenticates the access
-token and joins the client's player room. Match participants, coaches, and
-admins can subscribe to a match room with `watch-match`; spectators can read
-the live board but cannot submit moves. Reconnecting clients reload the
-server-persisted board and clock snapshot. The current event contract is:
+Clients connect to the backend Socket.IO origin with the HTTP-only access
+cookie. The server authenticates the cookie and joins the client's player
+notification room. Only a logged-in participant in a match can subscribe to
+that match's room with `watch-match`; coaches, admins, and other students are
+rejected. Reconnecting clients reload the server-persisted board and clock
+snapshot. The current event contract is:
 
 | Event | Payload | Direction |
 | --- | --- | --- |

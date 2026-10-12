@@ -12,6 +12,7 @@ import { UsersService } from '../users/users.service';
 import { UserRole } from '../common/enums/user-role.enum';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import type { IssuedAuthTokens } from './auth-cookies';
 
 interface TokenPayload {
   sub: string;
@@ -105,7 +106,11 @@ export class AuthService {
     return { message: 'Logged out successfully' };
   }
 
-  private async issueTokens(userId: string, email: string, role: UserRole) {
+  private async issueTokens(
+    userId: string,
+    email: string,
+    role: UserRole,
+  ): Promise<IssuedAuthTokens & { tokenType: string; expiresIn: string }> {
     const accessSecret = this.config.getOrThrow<string>('JWT_ACCESS_SECRET');
     const refreshSecret = this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
 

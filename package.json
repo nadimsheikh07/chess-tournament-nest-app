@@ -15,6 +15,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "create:super-admin": "node dist/cli/create-super-admin",
+    "seed:demo": "node dist/cli/seed-demo-users",
     "lint": "oxlint --type-aware src/ test/",
     "test": "vitest run",
     "test:watch": "vitest",
