@@ -21,6 +21,8 @@ describe('TournamentPairingService standings', () => {
   let matchRepository: {
     find: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
+    create: ReturnType<typeof vi.fn>;
+    save: ReturnType<typeof vi.fn>;
   };
 
   beforeEach(() => {
@@ -62,6 +64,8 @@ describe('TournamentPairingService standings', () => {
     matchRepository = {
       find: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
+      create: vi.fn((value: Partial<Match>) => value),
+      save: vi.fn(async (value: Match[]) => value),
     };
     const manager = {
       getRepository: vi.fn(
@@ -118,6 +122,53 @@ describe('TournamentPairingService standings', () => {
       expect.objectContaining({ userId: 'white', points: 0.5, draws: 1 }),
       expect.objectContaining({ userId: 'black', points: 0.5, draws: 1 }),
     ]);
+    expect(tournament.status).toBe(TournamentStatus.COMPLETED);
+  });
+
+  it('schedules a complete one-meeting round robin with tournament clocks', async () => {
+    const ids = ['a', 'b', 'c', 'd'];
+    participants = ids.map((userId, index) => ({
+      id: `${userId}-participant`,
+      userId,
+      points: 0,
+      byeCount: 0,
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      joinedAt: new Date(`2026-10-${12 + index}T00:00:00.000Z`),
+      status: ParticipantStatus.REGISTERED,
+    })) as TournamentParticipant[];
+    participantRepository.find.mockImplementation(async () => participants);
+    tournament.status = TournamentStatus.OPEN;
+    tournament.currentRound = 0;
+    tournament.timeControl = '5+3';
+
+    await service.start('tournament');
+    const allPairings: Match[] = [];
+    allPairings.push(...matchRepository.save.mock.calls[0][0]);
+
+    for (let round = 1; round < 3; round++) {
+      await service.afterMatchUpdate('tournament');
+      allPairings.push(
+        ...matchRepository.save.mock.calls[round][0],
+      );
+    }
+    await service.afterMatchUpdate('tournament');
+
+    const pairs = allPairings.map((match) =>
+      [match.whitePlayerId, match.blackPlayerId].sort().join(':'),
+    );
+    expect(pairs).toHaveLength(6);
+    expect(new Set(pairs).size).toBe(6);
+    expect(allPairings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          whiteTimeMs: 300000,
+          blackTimeMs: 300000,
+          incrementMs: 3000,
+        }),
+      ]),
+    );
     expect(tournament.status).toBe(TournamentStatus.COMPLETED);
   });
 });

@@ -133,9 +133,9 @@ export class MatchesController {
 
   @Get(':id/game')
   @ApiOperation({
-    summary: 'Get a player’s game state, clocks, PGN, and legal moves',
+    summary: 'Get a game state, clocks, PGN, and legal moves',
     description:
-      'Returns the authoritative 10-minute, no-increment clocks and finalizes an expired clock.',
+      'Players, coaches, and admins can read the authoritative game state. Only players receive legal moves.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   async getGameState(
@@ -152,6 +152,64 @@ export class MatchesController {
     const { clockExpired, ...publicState } = state;
     void clockExpired;
     return publicState;
+  }
+
+  @Post(':id/draw-offer')
+  @ApiOperation({ summary: 'Offer a draw to your opponent' })
+  async offerDraw(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const match = await this.matchesService.offerDraw(
+      request.user.userId,
+      id,
+    );
+    this.matchmakingGateway.notifyGameUpdated(match);
+    return match;
+  }
+
+  @Post(':id/draw-offer/accept')
+  @ApiOperation({ summary: 'Accept your opponent’s draw offer' })
+  async acceptDraw(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const match = await this.matchesService.respondToDraw(
+      request.user.userId,
+      id,
+      true,
+    );
+    this.matchmakingGateway.notifyGameUpdated(match);
+    return match;
+  }
+
+  @Post(':id/draw-offer/decline')
+  @ApiOperation({ summary: 'Decline your opponent’s draw offer' })
+  async declineDraw(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const match = await this.matchesService.respondToDraw(
+      request.user.userId,
+      id,
+      false,
+    );
+    this.matchmakingGateway.notifyGameUpdated(match);
+    return match;
+  }
+
+  @Post(':id/draw-offer/cancel')
+  @ApiOperation({ summary: 'Cancel your pending draw offer' })
+  async cancelDrawOffer(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const match = await this.matchesService.cancelDrawOffer(
+      request.user.userId,
+      id,
+    );
+    this.matchmakingGateway.notifyGameUpdated(match);
+    return match;
   }
 
   @Post(':id/moves')

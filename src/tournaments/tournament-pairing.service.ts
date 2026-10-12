@@ -7,7 +7,6 @@ import { DataSource, EntityManager } from 'typeorm';
 import { Match } from '../matches/entities/match.entity';
 import { MatchResult } from '../matches/entities/match-result.enum';
 import { MatchStatus } from '../matches/entities/match-status.enum';
-import { User } from '../users/entities/user.entity';
 import {
   ParticipantStatus,
   TournamentParticipant,
@@ -90,7 +89,10 @@ export class TournamentPairingService {
         return;
       }
 
-      const totalRounds = Math.ceil(Math.log2(participants.length));
+      const totalRounds =
+        participants.length % 2 === 0
+          ? participants.length - 1
+          : participants.length;
       if (tournament.currentRound >= totalRounds) {
         tournament.status = TournamentStatus.COMPLETED;
         await tournamentRepository.save(tournament);
@@ -116,7 +118,7 @@ export class TournamentPairingService {
         { tournamentId, status: ParticipantStatus.REGISTERED },
         { tournamentId, status: ParticipantStatus.COMPLETED },
       ],
-      order: { points: 'DESC', wins: 'DESC', joinedAt: 'ASC', id: 'ASC' },
+      order: { joinedAt: 'ASC', id: 'ASC' },
     });
   }
 
@@ -126,97 +128,73 @@ export class TournamentPairingService {
     participants: TournamentParticipant[],
   ) {
     const matchRepository = manager.getRepository(Match);
-    const priorMatches = await matchRepository.find({
-      where: { tournamentId: tournament.id },
-      select: { whitePlayerId: true, blackPlayerId: true },
-    });
-    const faced = new Set(
-      priorMatches.map((match) =>
-        [match.whitePlayerId, match.blackPlayerId].sort().join(':'),
-      ),
-    );
-    const colorBalance = new Map<string, number>();
-    for (const match of priorMatches) {
-      colorBalance.set(
-        match.whitePlayerId,
-        (colorBalance.get(match.whitePlayerId) ?? 0) + 1,
-      );
-      colorBalance.set(
-        match.blackPlayerId,
-        (colorBalance.get(match.blackPlayerId) ?? 0) - 1,
-      );
+    const slots: (TournamentParticipant | null)[] = [...participants];
+    if (slots.length % 2 === 1) {
+      slots.push(null);
     }
-    const users = await manager.getRepository(User).find({
-      select: { id: true, rating: true },
-    });
-    const ratings = new Map(users.map((user) => [user.id, user.rating]));
-    let remaining = [...participants];
+    const fixed = slots[0];
+    let rotating = slots.slice(1);
+    const matches: Match[] = [];
     const createdMatches: Match[] = [];
-
-    if (remaining.length % 2 === 1) {
-      const byeCandidate = [...remaining]
-        .reverse()
-        .find((participant) => participant.byeCount === 0) ??
-        remaining[remaining.length - 1];
-      byeCandidate.byeCount += 1;
-      await manager.getRepository(TournamentParticipant).save(byeCandidate);
-      remaining = remaining.filter(({ id }) => id !== byeCandidate.id);
+    const minutes = Number(tournament.timeControl.split('+')[0]);
+    const incrementSeconds = Number(tournament.timeControl.split('+')[1]);
+    if (
+      !Number.isInteger(minutes) ||
+      minutes < 1 ||
+      !Number.isInteger(incrementSeconds) ||
+      incrementSeconds < 0
+    ) {
+      throw new BadRequestException('Tournament time control is invalid');
     }
 
-    while (remaining.length >= 2) {
-      const white = remaining.shift()!;
-      const candidates = remaining
-        .map((candidate, index) => ({
-          candidate,
-          index,
-          rematch: faced.has(
-            [white.userId, candidate.userId].sort().join(':'),
-          ),
-          pointsDifference: Math.abs(white.points - candidate.points),
-          ratingDifference: Math.abs(
-            (ratings.get(white.userId) ?? 1200) -
-              (ratings.get(candidate.userId) ?? 1200),
-          ),
-        }))
-        .sort(
-          (left, right) =>
-            Number(left.rematch) - Number(right.rematch) ||
-            left.pointsDifference - right.pointsDifference ||
-            left.ratingDifference - right.ratingDifference ||
-            left.index - right.index,
-        );
-      const [opponent] = candidates;
-      remaining.splice(opponent.index, 1);
-      const whitePlayer =
-        (colorBalance.get(white.userId) ?? 0) <=
-        (colorBalance.get(opponent.candidate.userId) ?? 0)
-          ? white
-          : opponent.candidate;
-      const blackPlayer =
-        whitePlayer.id === white.id ? opponent.candidate : white;
-      createdMatches.push(
-        await matchRepository.save(
-          matchRepository.create({
-            whitePlayerId: whitePlayer.userId,
-            blackPlayerId: blackPlayer.userId,
-            tournamentId: tournament.id,
-            roundNumber: tournament.currentRound,
-            status: MatchStatus.SCHEDULED,
-            result: null,
-            pgn: null,
-            completedAt: null,
-          }),
-        ),
-      );
-      colorBalance.set(
-        whitePlayer.userId,
-        (colorBalance.get(whitePlayer.userId) ?? 0) + 1,
-      );
-      colorBalance.set(
-        blackPlayer.userId,
-        (colorBalance.get(blackPlayer.userId) ?? 0) - 1,
-      );
+    for (let roundIndex = 0; roundIndex < tournament.currentRound; roundIndex++) {
+      const roundSlots = [fixed, ...rotating];
+      const roundMatches: {
+        left: TournamentParticipant | null;
+        right: TournamentParticipant | null;
+      }[] = [];
+      for (let pairIndex = 0; pairIndex < roundSlots.length / 2; pairIndex++) {
+        roundMatches.push({
+          left: roundSlots[pairIndex],
+          right: roundSlots[roundSlots.length - 1 - pairIndex],
+        });
+      }
+
+      if (roundIndex === tournament.currentRound - 1) {
+        for (const [pairIndex, pair] of roundMatches.entries()) {
+          if (!pair.left || !pair.right) {
+            const bye = pair.left ?? pair.right;
+            if (bye) {
+              bye.byeCount += 1;
+              await manager.getRepository(TournamentParticipant).save(bye);
+            }
+            continue;
+          }
+          const white =
+            (roundIndex + pairIndex) % 2 === 0 ? pair.left : pair.right;
+          const black = white.id === pair.left.id ? pair.right : pair.left;
+          matches.push(
+            matchRepository.create({
+              whitePlayerId: white.userId,
+              blackPlayerId: black.userId,
+              tournamentId: tournament.id,
+              roundNumber: tournament.currentRound,
+              status: MatchStatus.SCHEDULED,
+              result: null,
+              pgn: null,
+              whiteTimeMs: minutes * 60_000,
+              blackTimeMs: minutes * 60_000,
+              incrementMs: incrementSeconds * 1000,
+              completedAt: null,
+            }),
+          );
+        }
+      }
+
+      const last = rotating[rotating.length - 1];
+      rotating = [last, ...rotating.slice(0, -1)];
     }
+    createdMatches.push(...(await matchRepository.save(matches)));
 
     await this.refreshStandings(manager, tournament.id, participants);
     return createdMatches;

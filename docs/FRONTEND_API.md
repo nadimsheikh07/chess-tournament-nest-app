@@ -218,8 +218,12 @@ through these routes.
 | `GET` | `/api/v1/matches` | Authenticated | Paginated match list |
 | `GET` | `/api/v1/matches/me` | Authenticated | Paginated match history for the signed-in player |
 | `GET` | `/api/v1/matches/:id` | Authenticated | Get one match |
-| `GET` | `/api/v1/matches/:id/game` | Player in match | Get FEN, turn, and legal moves |
+| `GET` | `/api/v1/matches/:id/game` | Player, coach, or admin | Restore game, clocks, PGN, and legal moves (players only) |
 | `POST` | `/api/v1/matches/:id/moves` | Player in match | Submit a chess move |
+| `POST` | `/api/v1/matches/:id/draw-offer` | Player in match | Offer a draw |
+| `POST` | `/api/v1/matches/:id/draw-offer/accept` | Opponent | Accept a draw offer |
+| `POST` | `/api/v1/matches/:id/draw-offer/decline` | Opponent | Decline a draw offer |
+| `POST` | `/api/v1/matches/:id/draw-offer/cancel` | Offering player | Cancel a pending draw offer |
 | `PATCH` | `/api/v1/matches/:id` | Coach/admin | Update match |
 | `DELETE` | `/api/v1/matches/:id` | Coach/admin | Delete match |
 
@@ -246,12 +250,19 @@ The list supports `page` (default `1`), `limit` (default `10`, max `100`),
 `blackPlayerId`), and `sortOrder` (`ASC` or `DESC`, default `DESC`). Optional
 filters: `status`, `result`, and `tournamentId`.
 
-The game-state endpoint returns `{ match, fen, turn, playerColor, legalMoves }`.
+The game-state endpoint restores `{ match, fen, turn, playerColor, legalMoves,
+moves, movePositions, whiteTimeMs, blackTimeMs, clockSnapshotAt }` from
+server-persisted PGN and clocks. Players can reconnect or refresh and receive
+the current board and clock snapshot. Coaches and admins may spectate; their
+`playerColor` is `null` and `legalMoves` is empty. Authenticated Socket.IO
+clients can join a match with `watch-match` and receive `game-updated` events.
 Submit a move as `{ "from": "e2", "to": "e4" }`; add `"promotion": "q"`,
-`"r"`, `"b"`, or `"n"` when promoting. Moves are validated against the current
-board and turn. The server updates the PGN, completes games when the chess
-rules determine an outcome, and recalculates ratings. A player can only read or
-play a match they are a participant in.
+`"r"`, `"b"`, or `"n"` when promoting. The server validates every move against
+the persisted board and turn, applies clock increments, and adjudicates
+checkmate, stalemate, threefold repetition, the 50-move rule, and timeouts.
+Draw offers are stored server-side and may be accepted, declined, or cancelled
+by the offering player. The server updates PGN and ratings; only match players
+may make moves or offer/respond to draws.
 
 ## Matchmaking
 
@@ -293,7 +304,8 @@ to the API origin using Socket.IO with the access token in
 `auth: { token: accessToken }`; invalid or expired tokens are disconnected.
 Socket.IO uses the same allowed origins as HTTP CORS.
 
-The queue selects the closest eligible rating. Its acceptable gap starts at
+The queue selects the closest eligible rating among waiting players (not FIFO).
+Its acceptable gap starts at
 100 points, expands by 50 points per minute, and caps at 800 points. Queue list
 parameters: `page` (default `1`), `limit` (default `10`, max `100`), `search`
 (queue ID, user ID, match ID, status, or rating), `sortBy` (`queuedAt`,
@@ -304,7 +316,7 @@ Matched entries cannot be deleted.
 ## Student dashboard workflow
 
 The student dashboard lists `open` and `ongoing` tournaments. Players can
-register while a tournament is `open`; Swiss rounds in an `ongoing` tournament
+register while a tournament is `open`; round-robin rounds in an `ongoing` tournament
 remain paired by the tournament system and are not mixed into the general
 matchmaking queue. The dashboard's **Find opponent** action uses the general
 rating-based queue described above. On pairing, both players enter the game
@@ -362,17 +374,21 @@ Create body:
 
 Creation sets status to `draft`. Set status to `open` with `PATCH` to accept
 registrations; `POST /api/v1/tournaments/:id/start` changes it to `ongoing` and
-generates Swiss-style rounds. The round count is
-`ceil(log2(registered participants))`; players with similar scores are paired,
-repeat opponents are avoided when possible, and an odd field receives a bye.
-New rounds start automatically when all matches in the current round are
-completed. Scores award 1 point for a win or bye, 0.5 for a draw, and 0 for a
-loss. Standings sort by points, wins, registration time (earlier first), then
-participant ID ascending. The final round changes the status to `completed`;
-the first-ranked participant is declared winner.
+generates a complete round robin. The round count is `n - 1` for an even field
+and `n` for an odd field; each pair meets exactly once and odd fields rotate a
+bye so each participant receives one. The next round starts automatically when
+all matches in the current round are completed. Scores award 1 point for a win
+or bye, 0.5 for a draw, and 0 for a loss. Standings sort by points, wins,
+registration time (earlier first), then participant ID ascending. The final
+round changes the status to `completed` and the first-ranked participant is
+declared winner. Tournament controls such as `5+3` set both the starting clock
+and per-move increment.
 Statuses are `draft`, `open`, `ongoing`, and `completed`. When full, new
 registrants get `waiting` participant status. `timeControl` uses
 `minutes+increment-seconds` format and defaults to `5+0`.
+Tournament dates are stored as ISO-8601 instants. The frontend renders
+`DD/MM/YYYY HH:mm` in the viewer's local timezone and includes the timezone
+abbreviation; local form values are converted to UTC before submission.
 Tournament list parameters: `page` (default `1`), `limit` (default `10`, max
 `100`), `search` (name or description), `sortBy` (`name`, `startDate`,
 `createdAt`, `maxParticipants`), `sortOrder` (`ASC`/`DESC`, default `ASC`), and

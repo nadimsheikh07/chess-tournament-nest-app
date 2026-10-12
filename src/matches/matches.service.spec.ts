@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DataSource, EntityManager, Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity';
+import { UserRole } from '../common/enums/user-role.enum';
 import { TournamentPairingService } from '../tournaments/tournament-pairing.service';
 import { Tournament } from '../tournaments/entities/tournament.entity';
 import { Match } from './entities/match.entity';
@@ -24,6 +25,8 @@ function createMatch(overrides: Partial<Match> = {}): Match {
     pgn: null,
     whiteTimeMs: 600000,
     blackTimeMs: 600000,
+    incrementMs: 0,
+    drawOfferedBy: null,
     clockStartedAt: null,
     endReason: null,
     completedAt: null,
@@ -40,7 +43,10 @@ describe('MatchesService live games', () => {
     find: ReturnType<typeof vi.fn>;
     save: ReturnType<typeof vi.fn>;
   };
-  let userRepository: { find: ReturnType<typeof vi.fn> };
+  let userRepository: {
+    find: ReturnType<typeof vi.fn>;
+    findOne: ReturnType<typeof vi.fn>;
+  };
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -50,7 +56,10 @@ describe('MatchesService live games', () => {
       find: vi.fn().mockResolvedValue([]),
       save: vi.fn(async (match: Match) => match),
     };
-    userRepository = { find: vi.fn().mockResolvedValue([]) };
+    userRepository = {
+      find: vi.fn().mockResolvedValue([]),
+      findOne: vi.fn().mockResolvedValue(null),
+    };
     const manager = {
       getRepository: vi.fn((entity: typeof Match | typeof User) =>
         entity === User ? userRepository : matchRepository,
@@ -92,6 +101,7 @@ describe('MatchesService live games', () => {
     expect(state.blackTimeMs).toBe(600000);
     expect(state.pgn).toContain('[Event "?"]');
     expect(state.moves).toEqual([]);
+    expect(state.movePositions).toHaveLength(1);
     expect(state.legalMoves).toContainEqual({
       from: 'e2',
       to: 'e4',
@@ -116,6 +126,86 @@ describe('MatchesService live games', () => {
       new Date('2026-10-12T12:00:00.000Z'),
     );
     expect(updated.status).toBe(MatchStatus.IN_PROGRESS);
+  });
+
+  it('adds the configured increment after a legal move', async () => {
+    const match = createMatch({
+      incrementMs: 3000,
+      clockStartedAt: new Date('2026-10-12T11:59:55.000Z'),
+    });
+    matchRepository.findOne.mockResolvedValue(match);
+
+    await service.playMove(playerWhite, matchId, { from: 'e2', to: 'e4' });
+
+    expect(match.whiteTimeMs).toBe(598000);
+  });
+
+  it('automatically ends the game as a draw on threefold repetition', async () => {
+    const match = createMatch();
+    matchRepository.findOne.mockResolvedValue(match);
+    const moves = [
+      [playerWhite, 'g1', 'f3'],
+      [playerBlack, 'g8', 'f6'],
+      [playerWhite, 'f3', 'g1'],
+      [playerBlack, 'f6', 'g8'],
+      [playerWhite, 'g1', 'f3'],
+      [playerBlack, 'g8', 'f6'],
+      [playerWhite, 'f3', 'g1'],
+      [playerBlack, 'f6', 'g8'],
+    ] as const;
+
+    for (const [playerId, from, to] of moves) {
+      await service.playMove(playerId, matchId, { from, to });
+    }
+
+    expect(match.status).toBe(MatchStatus.COMPLETED);
+    expect(match.result).toBe(MatchResult.DRAW);
+    expect(match.endReason).toBe('draw');
+  });
+
+  it('automatically ends the game as a draw after 50 moves without a pawn move or capture', async () => {
+    const match = createMatch({
+      pgn: [
+        '[SetUp "1"]',
+        '[FEN "7k/8/8/8/8/8/8/K5R1 w - - 99 50"]',
+        '',
+        '*',
+      ].join('\n'),
+    });
+    matchRepository.findOne.mockResolvedValue(match);
+
+    await service.playMove(playerWhite, matchId, {
+      from: 'g1',
+      to: 'g2',
+    });
+
+    expect(match.status).toBe(MatchStatus.COMPLETED);
+    expect(match.result).toBe(MatchResult.DRAW);
+    expect(match.endReason).toBe('draw');
+  });
+
+  it('allows coaches to spectate without exposing legal moves', async () => {
+    userRepository.findOne.mockResolvedValue({
+      id: playerWhite,
+      role: UserRole.COACH,
+    });
+    matchRepository.findOne.mockResolvedValue(createMatch());
+
+    const state = await service.getGameState(playerWhite, matchId);
+
+    expect(state.playerColor).toBeNull();
+    expect(state.legalMoves).toEqual([]);
+  });
+
+  it('completes a game when the opponent accepts a pending draw offer', async () => {
+    const match = createMatch({ drawOfferedBy: playerWhite });
+    matchRepository.findOne.mockResolvedValue(match);
+
+    const updated = await service.respondToDraw(playerBlack, matchId, true);
+
+    expect(updated.status).toBe(MatchStatus.COMPLETED);
+    expect(updated.result).toBe(MatchResult.DRAW);
+    expect(updated.drawOfferedBy).toBeNull();
   });
 
   it('rejects a move when it is not the submitting player’s turn', async () => {

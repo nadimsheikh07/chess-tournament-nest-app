@@ -145,7 +145,7 @@ export class MatchesService {
   }
 
   async getGameState(actorId: string, id: string) {
-    const { match, clockExpired } = await this.dataSource.transaction(
+    const { match, clockExpired, playerColor } = await this.dataSource.transaction(
       async (manager) => {
         const repository = manager.getRepository(Match);
         const match = await repository.findOne({
@@ -155,7 +155,11 @@ export class MatchesService {
         if (!match) {
           throw new NotFoundException('Match not found');
         }
-        this.assertMatchPlayer(match, actorId);
+        const playerColor = await this.assertMatchViewer(
+          manager,
+          match,
+          actorId,
+        );
 
         let clockExpired = false;
         const now = new Date();
@@ -188,7 +192,7 @@ export class MatchesService {
             clockExpired = true;
           }
         }
-        return { match, clockExpired };
+        return { match, clockExpired, playerColor };
       },
     );
 
@@ -197,11 +201,14 @@ export class MatchesService {
     }
 
     const chess = this.chessFor(match.pgn);
-    const playerColor = match.whitePlayerId === actorId ? 'w' : 'b';
     const snapshotAt = new Date();
     const whiteTimeMs = this.remainingTime(match, 'w', snapshotAt);
     const blackTimeMs = this.remainingTime(match, 'b', snapshotAt);
     const history = chess.history();
+    const verboseHistory = chess.history({ verbose: true });
+    const movePositions = verboseHistory.length
+      ? [verboseHistory[0].before, ...verboseHistory.map((move) => move.after)]
+      : [chess.fen()];
 
     return {
       match,
@@ -217,13 +224,16 @@ export class MatchesService {
           black: history[index * 2 + 1] ?? null,
         }),
       ),
+      movePositions,
       whiteTimeMs,
       blackTimeMs,
       clockStartedAt: match.clockStartedAt,
       clockSnapshotAt: snapshotAt,
       clockExpired,
       legalMoves:
-        chess.turn() === playerColor && match.status !== MatchStatus.COMPLETED
+        playerColor !== null &&
+        chess.turn() === playerColor &&
+        match.status !== MatchStatus.COMPLETED
           ? chess.moves({ verbose: true }).map((move) => ({
               from: move.from,
               to: move.to,
@@ -288,35 +298,131 @@ export class MatchesService {
 
       match.pgn = chess.pgn();
       if (playerColor === 'w') {
-        match.whiteTimeMs = remainingMs;
+        match.whiteTimeMs = remainingMs + match.incrementMs;
       } else {
-        match.blackTimeMs = remainingMs;
+        match.blackTimeMs = remainingMs + match.incrementMs;
       }
-      match.status = chess.isGameOver()
+      const automaticDraw =
+        chess.isThreefoldRepetition() || chess.isDrawByFiftyMoves();
+      const gameOver = automaticDraw || chess.isGameOver();
+      match.status = gameOver
         ? MatchStatus.COMPLETED
         : MatchStatus.IN_PROGRESS;
-      match.completedAt = chess.isGameOver() ? now : null;
-      match.result = chess.isGameOver()
-        ? chess.isDraw()
+      match.completedAt = gameOver ? now : null;
+      match.result = gameOver
+        ? automaticDraw || chess.isDraw()
           ? MatchResult.DRAW
           : chess.turn() === 'w'
             ? MatchResult.BLACK_WIN
             : MatchResult.WHITE_WIN
         : null;
-      match.endReason = chess.isGameOver()
+      match.endReason = gameOver
         ? chess.isCheckmate()
           ? 'checkmate'
           : chess.isStalemate()
             ? 'stalemate'
             : 'draw'
         : null;
-      match.clockStartedAt = chess.isGameOver() ? null : now;
+      match.drawOfferedBy = null;
+      match.clockStartedAt = gameOver ? null : now;
 
       const saved = await repository.save(match);
       if (saved.status === MatchStatus.COMPLETED) {
         await this.recalculateRatings(manager);
       }
       return saved;
+    });
+
+    if (updated.tournamentId) {
+      await this.tournamentPairing.afterMatchUpdate(updated.tournamentId);
+    }
+    return updated;
+  }
+
+  async offerDraw(actorId: string, id: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(Match);
+      const match = await repository.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!match) {
+        throw new NotFoundException('Match not found');
+      }
+      this.assertMatchPlayer(match, actorId);
+      if (match.status !== MatchStatus.IN_PROGRESS) {
+        throw new BadRequestException('This match is not in progress');
+      }
+      if (match.drawOfferedBy) {
+        throw new BadRequestException('A draw offer is already pending');
+      }
+      match.drawOfferedBy = actorId;
+      return repository.save(match);
+    });
+  }
+
+  async cancelDrawOffer(actorId: string, id: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(Match);
+      const match = await repository.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!match) {
+        throw new NotFoundException('Match not found');
+      }
+      this.assertMatchPlayer(match, actorId);
+      if (match.drawOfferedBy !== actorId) {
+        throw new BadRequestException('You do not have a pending draw offer');
+      }
+      match.drawOfferedBy = null;
+      return repository.save(match);
+    });
+  }
+
+  async respondToDraw(actorId: string, id: string, accept: boolean) {
+    const updated = await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(Match);
+      const match = await repository.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!match) {
+        throw new NotFoundException('Match not found');
+      }
+      this.assertMatchPlayer(match, actorId);
+      if (match.status !== MatchStatus.IN_PROGRESS) {
+        throw new BadRequestException('This match is not in progress');
+      }
+      if (!match.drawOfferedBy || match.drawOfferedBy === actorId) {
+        throw new BadRequestException('There is no opponent draw offer');
+      }
+
+      const now = new Date();
+      const activeColor = this.chessFor(match.pgn).turn();
+      if (this.remainingTime(match, activeColor, now) <= 0) {
+        match[activeColor === 'w' ? 'whiteTimeMs' : 'blackTimeMs'] = 0;
+        return this.completeMatch(
+          manager,
+          match,
+          activeColor === 'w' ? MatchResult.BLACK_WIN : MatchResult.WHITE_WIN,
+          'timeout',
+          now,
+        );
+      }
+
+      if (accept) {
+        return this.completeMatch(
+          manager,
+          match,
+          MatchResult.DRAW,
+          'draw',
+          now,
+        );
+      }
+
+      match.drawOfferedBy = null;
+      return repository.save(match);
     });
 
     if (updated.tournamentId) {
@@ -463,6 +569,33 @@ export class MatchesService {
     ) {
       throw new ForbiddenException('Only a player in this match can view it');
     }
+
+    private async assertMatchViewer(
+      manager: EntityManager,
+      match: Match,
+      userId: string,
+    ): Promise<'w' | 'b' | null> {
+      if (match.whitePlayerId === userId) {
+        return 'w';
+      }
+      if (match.blackPlayerId === userId) {
+        return 'b';
+      }
+
+      const user = await manager.getRepository(User).findOne({
+        where: { id: userId },
+        select: { id: true, role: true },
+      });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      if (user.role !== UserRole.COACH && user.role !== UserRole.ADMIN) {
+        throw new ForbiddenException(
+          'Only match players, coaches, and admins can view this game',
+        );
+      }
+      return null;
+    }
   }
 
   private chessFor(pgn: string | null) {
@@ -509,6 +642,7 @@ export class MatchesService {
     match.endReason = endReason;
     match.completedAt = completedAt;
     match.clockStartedAt = null;
+    match.drawOfferedBy = null;
     const saved = await manager.getRepository(Match).save(match);
     await this.recalculateRatings(manager);
     return saved;

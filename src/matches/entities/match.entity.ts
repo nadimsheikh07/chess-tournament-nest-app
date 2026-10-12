@@ -49,6 +49,12 @@ export class Match {
   @Column({ type: 'int', default: DEFAULT_MATCH_CLOCK_MS })
   blackTimeMs: number;
 
+  @Column({ type: 'int', default: 0 })
+  incrementMs: number;
+
+  @Column({ type: 'uuid', nullable: true })
+  drawOfferedBy: string | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   clockStartedAt: Date | null;
 

@@ -59,7 +59,7 @@ export class TournamentsController {
 
   @Post(':id/start')
   @ApiOperation({
-    summary: 'Start an open tournament and create the first Swiss round',
+    summary: 'Start an open tournament and create the first round-robin round',
   })
   start(
     @Req() req: AuthenticatedRequest,

@@ -1,12 +1,19 @@
 import {
+  ConnectedSocket,
   OnGatewayConnection,
+  MessageBody,
+  SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
+import { InjectRepository } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { Server, Socket } from 'socket.io';
+import { Repository } from 'typeorm';
+import { UserRole } from '../common/enums/user-role.enum';
 import { Match } from '../matches/entities/match.entity';
+import { User } from '../users/entities/user.entity';
 
 interface AccessTokenPayload {
   sub: string;
@@ -28,6 +35,10 @@ export class MatchmakingGateway implements OnGatewayConnection {
   constructor(
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    @InjectRepository(Match)
+    private readonly matches: Repository<Match>,
+    @InjectRepository(User)
+    private readonly users: Repository<User>,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -53,6 +64,50 @@ export class MatchmakingGateway implements OnGatewayConnection {
     }
 
     await client.join(this.playerRoom(payload.sub));
+    client.data.userId = payload.sub;
+  }
+
+  @SubscribeMessage('watch-match')
+  async watchMatch(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { matchId?: string },
+  ) {
+    const matchId = payload?.matchId;
+    const userId = client.data.userId as string | undefined;
+    if (!userId || !matchId) {
+      return { event: 'watch-match-error', data: 'Invalid match request' };
+    }
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        matchId,
+      )
+    ) {
+      return { event: 'watch-match-error', data: 'Invalid match request' };
+    }
+
+    const match = await this.matches.findOneBy({ id: matchId });
+    if (!match) {
+      return { event: 'watch-match-error', data: 'Match not found' };
+    }
+    const isPlayer =
+      match.whitePlayerId === userId || match.blackPlayerId === userId;
+    if (!isPlayer) {
+      const user = await this.users.findOne({
+        where: { id: userId },
+        select: { id: true, role: true },
+      });
+      if (
+        !user ||
+        (user.role !== UserRole.COACH && user.role !== UserRole.ADMIN)
+      ) {
+        return {
+          event: 'watch-match-error',
+          data: 'Only players, coaches, and admins can watch this match',
+        };
+      }
+    }
+    await client.join(this.matchRoom(matchId));
+    return { event: 'watch-match-ready', data: { matchId } };
   }
 
   notifyMatchFound(match: Match) {
@@ -73,9 +128,14 @@ export class MatchmakingGateway implements OnGatewayConnection {
     this.server
       .to(this.playerRoom(match.blackPlayerId))
       .emit('game-updated', payload);
+    this.server.to(this.matchRoom(match.id)).emit('game-updated', payload);
   }
 
   private playerRoom(userId: string) {
     return `player:${userId}`;
+  }
+
+  private matchRoom(matchId: string) {
+    return `match:${matchId}`;
   }
 }
