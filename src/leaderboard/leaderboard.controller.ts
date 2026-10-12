@@ -1,10 +1,4 @@
-import {
-  Controller,
-  Get,
-  Param,
-  ParseUUIDPipe,
-  Query,
-} from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { LeaderboardService } from './leaderboard.service';
 import {
   ApiOperation,
@@ -13,6 +7,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { LeaderboardQueryDto } from './dto/leaderboard-query.dto';
 
 @Controller('leaderboard')
 @ApiTags('Leaderboard')
@@ -21,12 +16,18 @@ export class LeaderboardController {
 
   @Get()
   @ApiOperation({
-    summary: 'Get the rated player leaderboard',
+    summary: 'Get the player leaderboard',
     description:
-      'Rankings and win/draw/loss statistics are calculated from completed matches.',
+      'Completed-match scoring is 1 point for a win, 0.5 for a draw, and 0 for a loss. Rankings sort by points, wins, rating, then name.',
   })
   @ApiQuery({ name: 'page', required: false, example: 1, minimum: 1 })
-  @ApiQuery({ name: 'limit', required: false, example: 50, minimum: 1, maximum: 100 })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    example: 50,
+    minimum: 1,
+    maximum: 100,
+  })
   @ApiResponse({
     status: 200,
     description: 'Paginated leaderboard.',
@@ -42,7 +43,7 @@ export class LeaderboardController {
             wins: 3,
             draws: 1,
             losses: 1,
-            points: 10,
+            points: 3.5,
           },
         ],
         meta: { total: 1, page: 1, limit: 50, totalPages: 1 },
@@ -50,8 +51,8 @@ export class LeaderboardController {
     },
   })
   @ApiResponse({ status: 400, description: 'Invalid page or limit.' })
-  findAll(@Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.leaderboardService.findAll(page, limit);
+  findAll(@Query() query: LeaderboardQueryDto) {
+    return this.leaderboardService.findAll(query);
   }
 
   @Get(':id')

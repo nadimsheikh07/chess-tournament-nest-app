@@ -30,6 +30,12 @@
 For frontend routes, authentication, roles, request/response examples, and
 query parameters, see the [Frontend API Guide](./docs/FRONTEND_API.md).
 
+The versioned REST API is rooted at `/api/v1`; Swagger is available at
+`/api/v1/docs`. All REST bodies and query parameters are validated with DTOs.
+Successful single-resource responses use `{ "data": ... }`; paginated
+responses use `{ "data": [...], "meta": { ... } }`. Errors use Nest's
+standard `{ "statusCode": ..., "message": ..., "error": ... }` response.
+
 All match and matchmaking endpoints require a bearer access token. Standalone
 match creation, updates, and deletion are restricted to coaches and admins.
 
@@ -59,6 +65,12 @@ be manually created, reassigned, cancelled, or deleted.
 - `GET /tournaments/:id/leaderboard` returns current points and rankings.
 - `GET /tournaments/:id/winner` returns the top-ranked participant after the
   tournament is `completed`.
+
+Tournament scoring is 1 point for a win, 0.5 for a draw, and 0 for a loss; a
+bye is worth 1 point. Standings are ordered by points, then wins, registration
+time (earlier first), and participant ID (ascending). Rankings use sequential
+positions, and the first participant under that order is declared the winner
+when the tournament completes.
 
 ### User management
 
@@ -91,8 +103,20 @@ role through profile updates, and the last admin cannot be demoted or deleted.
   and optional `status` and `userId` filters.
 - `GET /leaderboard?page=1&limit=50` returns a paginated leaderboard;
   `GET /leaderboard/:userId` returns one player's standing. Rankings and W/D/L
-  statistics are derived from completed matches, so leaderboard entries are
-  read-only.
+  statistics are derived from completed matches, with 1 point per win, 0.5 per
+  draw, and 0 per loss. Rankings sort by points, wins, rating, and name, in
+  that order; ranks are sequential. Leaderboard entries are read-only.
+
+### Real-time Socket.IO events
+
+Clients connect to the backend Socket.IO origin with
+`auth: { "token": "<access-token>" }`. The server authenticates the access
+token and joins the client's player room. The current event contract is:
+
+| Event | Payload | Direction |
+| --- | --- | --- |
+| `match-found` | `{ "matchId": "<uuid>", "match": <Match> }` | Server → client |
+| `game-updated` | `{ "matchId": "<uuid>" }` | Server → client |
 
 Players begin at 1200 Elo. Ratings are recalculated from completed match
 results whenever a match is created, updated, or deleted. Database schema

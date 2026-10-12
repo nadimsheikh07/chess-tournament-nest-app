@@ -1,7 +1,7 @@
 # Kingdom of Chess API: Frontend Guide
 
 This guide describes the HTTP API for frontend integration. Swagger UI is also
-available at `GET /api/docs` when the backend is running.
+available at `GET /api/v1/docs` when the backend is running.
 
 ## Base URL and headers
 
@@ -25,7 +25,8 @@ The development default allows `http://localhost:3000` and
 deploying. The browser's `strict-origin-when-cross-origin` referrer policy is
 normal and does not itself indicate a CORS failure.
 
-All application routes use the `/api` prefix. Send JSON request bodies with:
+All application routes use the versioned `/api/v1` prefix. Send JSON request
+bodies with:
 
 ```http
 Content-Type: application/json
@@ -39,13 +40,18 @@ Authorization: Bearer <accessToken>
 
 ## Authentication
 
+Successful single-resource responses wrap their payload in `{ "data": ... }`.
+Paginated responses use `{ "data": [...], "meta": {...} }`. Error responses
+use `{ "statusCode": ..., "message": ..., "error": ... }`. Response examples
+below show unwrapped payloads unless they explicitly describe pagination.
+
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| `POST` | `/api/auth/register` | No | Register as a player and receive tokens |
-| `POST` | `/api/auth/login` | No | Sign in and receive tokens |
-| `POST` | `/api/auth/refresh` | No | Rotate tokens using the refresh token |
-| `POST` | `/api/auth/logout` | Bearer | Revoke the current refresh-token session |
-| `GET` | `/api/auth/profile` | Bearer | Get the identity from the access token |
+| `POST` | `/api/v1/auth/register` | No | Register as a player and receive tokens |
+| `POST` | `/api/v1/auth/login` | No | Sign in and receive tokens |
+| `POST` | `/api/v1/auth/refresh` | No | Rotate tokens using the refresh token |
+| `POST` | `/api/v1/auth/logout` | Bearer | Revoke the current refresh-token session |
+| `GET` | `/api/v1/auth/profile` | Bearer | Get the identity from the access token |
 
 ### Register
 
@@ -97,7 +103,7 @@ the returned values. Logout returns:
 { "message": "Logged out successfully" }
 ```
 
-`GET /api/auth/profile` returns the authenticated token identity, currently
+`GET /api/v1/auth/profile` returns the authenticated token identity, currently
 including `userId`, `email`, and `role`. A role change takes effect in newly
 issued tokens; refresh or sign in again to obtain an updated role claim.
 
@@ -105,13 +111,13 @@ issued tokens; refresh or sign in again to obtain an updated role claim.
 
 Roles are `player`, `coach`, and `admin`.
 
-- Admin-only: user administration (`GET/POST /api/users`,
-  `GET/PATCH/DELETE /api/users/:id`).
+- Admin-only: user administration (`GET/POST /api/v1/users`,
+  `GET/PATCH/DELETE /api/v1/users/:id`).
 - Coach/admin: create, update, and delete matches; inspect all matchmaking
   queue entries.
 - Authenticated: profile, matches, tournaments, and matchmaking routes unless
   an endpoint below is explicitly described as public.
-- Public: `GET /api/leaderboard` and `GET /api/leaderboard/:userId`.
+- Public: `GET /api/v1/leaderboard` and `GET /api/v1/leaderboard/:userId`.
 
 ## Pagination, search, and sorting
 
@@ -138,7 +144,7 @@ parameters and defaults vary by list. Use only the documented `sortBy` values;
 unsupported values are rejected by request validation. Example:
 
 ```text
-GET /api/matches?page=2&limit=20&search=completed&sortBy=createdAt&sortOrder=DESC
+GET /api/v1/matches?page=2&limit=20&search=completed&sortBy=createdAt&sortOrder=DESC
 ```
 
 ## Users
@@ -147,15 +153,15 @@ All user endpoints require a bearer token.
 
 | Method | Path | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/api/users` | Admin | Create a user |
-| `GET` | `/api/users` | Admin | Paginated user list |
-| `GET` | `/api/users/me` | Authenticated | Get own profile |
-| `PATCH` | `/api/users/me` | Authenticated | Update own name/email |
-| `GET` | `/api/users/me/matches` | Authenticated | List own matches |
-| `GET` | `/api/users/me/schedule` | Authenticated | List own tournament registrations |
-| `GET` | `/api/users/:id` | Admin | Get one user |
-| `PATCH` | `/api/users/:id` | Admin | Update name/email/password/role |
-| `DELETE` | `/api/users/:id` | Admin | Delete a user |
+| `POST` | `/api/v1/users` | Admin | Create a user |
+| `GET` | `/api/v1/users` | Admin | Paginated user list |
+| `GET` | `/api/v1/users/me` | Authenticated | Get own profile |
+| `PATCH` | `/api/v1/users/me` | Authenticated | Update own name/email |
+| `GET` | `/api/v1/users/me/matches` | Authenticated | List own matches |
+| `GET` | `/api/v1/users/me/schedule` | Authenticated | List own tournament registrations |
+| `GET` | `/api/v1/users/:id` | Admin | Get one user |
+| `PATCH` | `/api/v1/users/:id` | Admin | Update name/email/password/role |
+| `DELETE` | `/api/v1/users/:id` | Admin | Delete a user |
 
 User creation body:
 
@@ -208,14 +214,14 @@ through these routes.
 
 | Method | Path | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/api/matches` | Coach/admin | Create a match |
-| `GET` | `/api/matches` | Authenticated | Paginated match list |
-| `GET` | `/api/matches/me` | Authenticated | Paginated match history for the signed-in player |
-| `GET` | `/api/matches/:id` | Authenticated | Get one match |
-| `GET` | `/api/matches/:id/game` | Player in match | Get FEN, turn, and legal moves |
-| `POST` | `/api/matches/:id/moves` | Player in match | Submit a chess move |
-| `PATCH` | `/api/matches/:id` | Coach/admin | Update match |
-| `DELETE` | `/api/matches/:id` | Coach/admin | Delete match |
+| `POST` | `/api/v1/matches` | Coach/admin | Create a match |
+| `GET` | `/api/v1/matches` | Authenticated | Paginated match list |
+| `GET` | `/api/v1/matches/me` | Authenticated | Paginated match history for the signed-in player |
+| `GET` | `/api/v1/matches/:id` | Authenticated | Get one match |
+| `GET` | `/api/v1/matches/:id/game` | Player in match | Get FEN, turn, and legal moves |
+| `POST` | `/api/v1/matches/:id/moves` | Player in match | Submit a chess move |
+| `PATCH` | `/api/v1/matches/:id` | Coach/admin | Update match |
+| `DELETE` | `/api/v1/matches/:id` | Coach/admin | Delete match |
 
 Create body:
 
@@ -253,12 +259,12 @@ All matchmaking endpoints require a bearer token.
 
 | Method | Path | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/api/matchmaking` | Authenticated | Join the queue and attempt a pairing |
-| `GET` | `/api/matchmaking/me` | Authenticated | Get own latest queue entry |
-| `DELETE` | `/api/matchmaking/me` | Authenticated | Leave own waiting queue entry |
-| `GET` | `/api/matchmaking` | Coach/admin | Paginated queue list |
-| `GET` | `/api/matchmaking/:id` | Owner or coach/admin | Get one queue entry |
-| `DELETE` | `/api/matchmaking/:id` | Owner or coach/admin | Delete an unmatched queue entry |
+| `POST` | `/api/v1/matchmaking` | Authenticated | Join the queue and attempt a pairing |
+| `GET` | `/api/v1/matchmaking/me` | Authenticated | Get own latest queue entry |
+| `DELETE` | `/api/v1/matchmaking/me` | Authenticated | Leave own waiting queue entry |
+| `GET` | `/api/v1/matchmaking` | Coach/admin | Paginated queue list |
+| `GET` | `/api/v1/matchmaking/:id` | Owner or coach/admin | Get one queue entry |
+| `DELETE` | `/api/v1/matchmaking/:id` | Owner or coach/admin | Delete an unmatched queue entry |
 
 The join endpoint is for player accounts only and has no request body; it uses
 the authenticated user's rating. A player with a scheduled or in-progress match
@@ -303,7 +309,7 @@ remain paired by the tournament system and are not mixed into the general
 matchmaking queue. The dashboard's **Find opponent** action uses the general
 rating-based queue described above. On pairing, both players enter the game
 room; after the game completes, they can return to the dashboard to queue again.
-`GET /api/matches/me` and the leaderboard endpoints supply match history and
+`GET /api/v1/matches/me` and the leaderboard endpoints supply match history and
 current ranking.
 
 ## Leaderboard
@@ -312,13 +318,13 @@ Leaderboard endpoints are public and read-only.
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/api/leaderboard` | Paginated all-player rankings |
-| `GET` | `/api/leaderboard/:userId` | One player's standing |
+| `GET` | `/api/v1/leaderboard` | Paginated all-player rankings |
+| `GET` | `/api/v1/leaderboard/:userId` | One player's standing |
 
 The list accepts `page` (default `1`) and `limit` (default `50`, max `100`).
 Entries include `rank`, `userId`, `name`, `rating`, `gamesPlayed`, `wins`,
-`draws`, `losses`, and `points`. Wins count for 3 points and draws for 1.
-Rankings sort by rating, then points, wins, and name.
+`draws`, `losses`, and `points`. Wins count for 1 point, draws for 0.5, and
+losses for 0. Rankings sort by points, wins, rating, and name, in that order.
 
 ## Tournaments
 
@@ -328,18 +334,18 @@ Players can self-join tournaments while registration is open.
 
 | Method | Path | Access | Description |
 | --- | --- | --- | --- |
-| `POST` | `/api/tournaments` | Coach/admin | Create a tournament |
-| `GET` | `/api/tournaments` | Authenticated | Searchable, sortable, paginated tournament list |
-| `GET` | `/api/tournaments/my-schedule` | Authenticated | Get own tournament schedule |
-| `GET` | `/api/tournaments/:id` | Authenticated | Get tournament details |
-| `PATCH` | `/api/tournaments/:id` | Coach/admin | Update draft/open tournament, including status |
-| `DELETE` | `/api/tournaments/:id` | Coach/admin | Delete draft/open tournament |
-| `POST` | `/api/tournaments/:id/start` | Coach/admin | Start and automatically pair round one |
-| `POST` | `/api/tournaments/:id/join` | Authenticated | Register or join the waiting list |
-| `GET` | `/api/tournaments/:id/participants` | Authenticated | List participants |
-| `GET` | `/api/tournaments/:id/matches` | Authenticated | List generated pairings and results |
-| `GET` | `/api/tournaments/:id/leaderboard` | Authenticated | List current standings and rankings |
-| `GET` | `/api/tournaments/:id/winner` | Authenticated | Get the winner after completion |
+| `POST` | `/api/v1/tournaments` | Coach/admin | Create a tournament |
+| `GET` | `/api/v1/tournaments` | Authenticated | Searchable, sortable, paginated tournament list |
+| `GET` | `/api/v1/tournaments/my-schedule` | Authenticated | Get own tournament schedule |
+| `GET` | `/api/v1/tournaments/:id` | Authenticated | Get tournament details |
+| `PATCH` | `/api/v1/tournaments/:id` | Coach/admin | Update draft/open tournament, including status |
+| `DELETE` | `/api/v1/tournaments/:id` | Coach/admin | Delete draft/open tournament |
+| `POST` | `/api/v1/tournaments/:id/start` | Coach/admin | Start and automatically pair round one |
+| `POST` | `/api/v1/tournaments/:id/join` | Authenticated | Register or join the waiting list |
+| `GET` | `/api/v1/tournaments/:id/participants` | Authenticated | List participants |
+| `GET` | `/api/v1/tournaments/:id/matches` | Authenticated | List generated pairings and results |
+| `GET` | `/api/v1/tournaments/:id/leaderboard` | Authenticated | List current standings and rankings |
+| `GET` | `/api/v1/tournaments/:id/winner` | Authenticated | Get the winner after completion |
 
 Create body:
 
@@ -355,13 +361,15 @@ Create body:
 ```
 
 Creation sets status to `draft`. Set status to `open` with `PATCH` to accept
-registrations; `POST /api/tournaments/:id/start` changes it to `ongoing` and
+registrations; `POST /api/v1/tournaments/:id/start` changes it to `ongoing` and
 generates Swiss-style rounds. The round count is
 `ceil(log2(registered participants))`; players with similar scores are paired,
 repeat opponents are avoided when possible, and an odd field receives a bye.
 New rounds start automatically when all matches in the current round are
-completed. Scores award 1 point for a win and 0.5 for a draw. The final round
-changes the status to `completed`; the winner is the first-ranked participant.
+completed. Scores award 1 point for a win or bye, 0.5 for a draw, and 0 for a
+loss. Standings sort by points, wins, registration time (earlier first), then
+participant ID ascending. The final round changes the status to `completed`;
+the first-ranked participant is declared winner.
 Statuses are `draft`, `open`, `ongoing`, and `completed`. When full, new
 registrants get `waiting` participant status. `timeControl` uses
 `minutes+increment-seconds` format and defaults to `5+0`.

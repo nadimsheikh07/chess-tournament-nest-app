@@ -51,7 +51,8 @@ export class MatchesController {
   @ApiResponse({ status: 201, description: 'Match created.' })
   @ApiResponse({
     status: 400,
-    description: 'Invalid players, status, result, or tournament pairing request.',
+    description:
+      'Invalid players, status, result, or tournament pairing request.',
   })
   @ApiResponse({ status: 401, description: 'Authentication required.' })
   @ApiResponse({ status: 403, description: 'Coach or admin role required.' })
@@ -78,7 +79,8 @@ export class MatchesController {
   @ApiQuery({
     name: 'search',
     required: false,
-    description: 'Search match ID, player IDs, tournament ID, status, or result',
+    description:
+      'Search match ID, player IDs, tournament ID, status, or result',
   })
   @ApiQuery({
     name: 'sortBy',
@@ -107,7 +109,10 @@ export class MatchesController {
     status: 200,
     description: 'Paginated matches and page metadata.',
   })
-  @ApiResponse({ status: 400, description: 'Invalid pagination or filter values.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid pagination or filter values.',
+  })
   @ApiResponse({ status: 401, description: 'Authentication required.' })
   findAll(@Query() query: FindMatchesDto) {
     return this.matchesService.findAll(query);
@@ -115,7 +120,10 @@ export class MatchesController {
 
   @Get('me')
   @ApiOperation({ summary: 'List your match history' })
-  @ApiResponse({ status: 200, description: 'Paginated matches for the player.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated matches for the player.',
+  })
   findMine(
     @Req() request: AuthenticatedRequest,
     @Query() query: FindMatchesDto,
@@ -141,8 +149,8 @@ export class MatchesController {
     if (state.clockExpired) {
       this.matchmakingGateway.notifyGameUpdated(state.match);
     }
-    const publicState = { ...state };
-    delete publicState.clockExpired;
+    const { clockExpired, ...publicState } = state;
+    void clockExpired;
     return publicState;
   }
 
@@ -166,7 +174,8 @@ export class MatchesController {
   @Post(':id/resign')
   @ApiOperation({
     summary: 'Resign from your match',
-    description: 'Ends the match, records the result, and recalculates ratings.',
+    description:
+      'Ends the match, records the result, and recalculates ratings.',
   })
   @ApiParam({ name: 'id', format: 'uuid' })
   async resign(
@@ -191,26 +200,31 @@ export class MatchesController {
   @ApiOperation({ summary: 'Update a match (coach/admin only)' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiBody({ type: UpdateMatchDto })
-  @ApiResponse({ status: 200, description: 'Match updated; player ratings recalculated.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Match updated; player ratings recalculated.',
+  })
   @ApiResponse({ status: 400, description: 'Invalid match status or result.' })
   @ApiResponse({ status: 403, description: 'Coach or admin role required.' })
-  @ApiResponse({ status: 404, description: 'Match, player, or tournament not found.' })
+  @ApiResponse({
+    status: 404,
+    description: 'Match, player, or tournament not found.',
+  })
   update(
     @Req() request: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() updateMatchDto: UpdateMatchDto,
   ) {
-    return this.matchesService.update(
-      request.user.userId,
-      id,
-      updateMatchDto,
-    );
+    return this.matchesService.update(request.user.userId, id, updateMatchDto);
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a match (coach/admin only)' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'Match deleted; player ratings recalculated.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Match deleted; player ratings recalculated.',
+  })
   @ApiResponse({ status: 403, description: 'Coach or admin role required.' })
   @ApiResponse({ status: 404, description: 'Match not found.' })
   remove(

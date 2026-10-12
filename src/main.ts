@@ -3,6 +3,7 @@ import { AppModule, ObserveInstrument } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { ApiResponseInterceptor } from './common/interceptors/api-response.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -25,7 +26,8 @@ async function bootstrap() {
     allowedHeaders: ['Authorization', 'Content-Type'],
   });
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api/v1');
+  app.useGlobalInterceptors(new ApiResponseInterceptor());
 
   app.useGlobalPipes(
     new ValidationPipe({
@@ -45,9 +47,12 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config);
 
-  SwaggerModule.setup('api/docs', app, document);
+  SwaggerModule.setup('api/v1/docs', app, document);
 
   await app.listen(process.env.PORT ?? 3000);
 }
 
-bootstrap();
+bootstrap().catch((error: unknown) => {
+  console.error('Failed to start the application', error);
+  process.exitCode = 1;
+});

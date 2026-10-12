@@ -87,12 +87,10 @@ describe('MatchesService live games', () => {
     const state = await service.getGameState(playerWhite, matchId);
 
     expect(match.status).toBe(MatchStatus.IN_PROGRESS);
-    expect(match.clockStartedAt).toEqual(
-      new Date('2026-10-12T12:00:00.000Z'),
-    );
+    expect(match.clockStartedAt).toEqual(new Date('2026-10-12T12:00:00.000Z'));
     expect(state.whiteTimeMs).toBe(600000);
     expect(state.blackTimeMs).toBe(600000);
-    expect(state.pgn).toBe('');
+    expect(state.pgn).toContain('[Event "?"]');
     expect(state.moves).toEqual([]);
     expect(state.legalMoves).toContainEqual({
       from: 'e2',
@@ -112,12 +110,28 @@ describe('MatchesService live games', () => {
       to: 'e4',
     });
 
-    expect(updated.pgn).toBe('1. e4');
+    expect(updated.pgn).toContain('1. e4 *');
     expect(updated.whiteTimeMs).toBe(595000);
     expect(updated.clockStartedAt).toEqual(
       new Date('2026-10-12T12:00:00.000Z'),
     );
     expect(updated.status).toBe(MatchStatus.IN_PROGRESS);
+  });
+
+  it('rejects a move when it is not the submitting player’s turn', async () => {
+    matchRepository.findOne.mockResolvedValue(createMatch());
+
+    await expect(
+      service.playMove(playerBlack, matchId, { from: 'e7', to: 'e5' }),
+    ).rejects.toThrow('It is not your turn');
+  });
+
+  it('rejects a move that is not legal in the current position', async () => {
+    matchRepository.findOne.mockResolvedValue(createMatch());
+
+    await expect(
+      service.playMove(playerWhite, matchId, { from: 'e2', to: 'e5' }),
+    ).rejects.toThrow('Illegal chess move');
   });
 
   it('records a timeout as a loss for the player whose clock expired', async () => {
