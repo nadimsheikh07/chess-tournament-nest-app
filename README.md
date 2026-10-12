@@ -183,6 +183,10 @@ $ npm run test:cov
 
 ## Deployment
 
+This application has a production Docker image. To deploy the frontend, API,
+and PostgreSQL together from the workspace, follow the
+[Docker deployment guide](../DEPLOYMENT.md).
+
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
 
 If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
