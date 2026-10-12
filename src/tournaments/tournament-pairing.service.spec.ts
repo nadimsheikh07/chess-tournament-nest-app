@@ -171,4 +171,38 @@ describe('TournamentPairingService standings', () => {
     );
     expect(tournament.status).toBe(TournamentStatus.COMPLETED);
   });
+
+  it('rotates one bye per participant in an odd-sized round robin', async () => {
+    participants = ['a', 'b', 'c'].map((userId, index) => ({
+      id: `${userId}-participant`,
+      userId,
+      points: 0,
+      byeCount: 0,
+      wins: 0,
+      draws: 0,
+      losses: 0,
+      joinedAt: new Date(`2026-10-${12 + index}T00:00:00.000Z`),
+      status: ParticipantStatus.REGISTERED,
+    })) as TournamentParticipant[];
+    participantRepository.find.mockImplementation(async () => participants);
+    tournament.status = TournamentStatus.OPEN;
+    tournament.currentRound = 0;
+    tournament.timeControl = '5+0';
+
+    await service.start('tournament');
+    const allPairings: Match[] = [...matchRepository.save.mock.calls[0][0]];
+    await service.afterMatchUpdate('tournament');
+    allPairings.push(...matchRepository.save.mock.calls[1][0]);
+    await service.afterMatchUpdate('tournament');
+    allPairings.push(...matchRepository.save.mock.calls[2][0]);
+    await service.afterMatchUpdate('tournament');
+
+    const pairs = allPairings.map((match) =>
+      [match.whitePlayerId, match.blackPlayerId].sort().join(':'),
+    );
+    expect(pairs).toHaveLength(3);
+    expect(new Set(pairs).size).toBe(3);
+    expect(participants.map(({ byeCount }) => byeCount)).toEqual([1, 1, 1]);
+    expect(tournament.status).toBe(TournamentStatus.COMPLETED);
+  });
 });

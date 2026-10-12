@@ -109,6 +109,25 @@ describe('MatchesService live games', () => {
     });
   });
 
+  it('restores the persisted board, moves, and running clock after reconnecting', async () => {
+    const match = createMatch({
+      pgn: '1. e4 e5 *',
+      clockStartedAt: new Date('2026-10-12T11:59:58.000Z'),
+    });
+    matchRepository.findOne.mockResolvedValue(match);
+
+    const state = await service.getGameState(playerWhite, matchId);
+
+    expect(state.moves).toEqual([
+      { number: 1, white: 'e4', black: 'e5' },
+    ]);
+    expect(state.movePositions).toHaveLength(3);
+    expect(state.fen).not.toBe(
+      'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+    );
+    expect(state.whiteTimeMs).toBe(598000);
+  });
+
   it('stores the PGN and deducts the active player clock when a move is made', async () => {
     const match = createMatch({
       clockStartedAt: new Date('2026-10-12T11:59:55.000Z'),
