@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import { Chess } from 'chess.js';
 import { UserRole } from '../common/enums/user-role.enum';
 import {
   Tournament,
@@ -19,6 +20,7 @@ import { UpdateMatchDto } from './dto/update-match.dto';
 import { MatchResult } from './entities/match-result.enum';
 import { Match } from './entities/match.entity';
 import { MatchStatus } from './entities/match-status.enum';
+import { PlayMoveDto } from './dto/play-move.dto';
 
 @Injectable()
 export class MatchesService {
@@ -63,7 +65,7 @@ export class MatchesService {
     });
   }
 
-  async findAll(query: FindMatchesDto) {
+  async findAll(query: FindMatchesDto, playerId?: string) {
     const sortColumns = {
       createdAt: 'match.createdAt',
       updatedAt: 'match.updatedAt',
@@ -79,6 +81,12 @@ export class MatchesService {
     const sortOrder = query.sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
     const queryBuilder = this.matches.createQueryBuilder('match');
 
+    if (playerId) {
+      queryBuilder.andWhere(
+        '(match.whitePlayerId = :playerId OR match.blackPlayerId = :playerId)',
+        { playerId },
+      );
+    }
     if (query.search?.trim()) {
       queryBuilder.andWhere(
         `(
@@ -134,6 +142,90 @@ export class MatchesService {
       throw new NotFoundException('Match not found');
     }
     return match;
+  }
+
+  async getGameState(actorId: string, id: string) {
+    const match = await this.findOne(id);
+    this.assertMatchPlayer(match, actorId);
+    const chess = this.chessFor(match.pgn);
+    const playerColor =
+      match.whitePlayerId === actorId ? 'w' : 'b';
+
+    return {
+      match,
+      fen: chess.fen(),
+      turn: chess.turn(),
+      playerColor,
+      legalMoves:
+        chess.turn() === playerColor && match.status !== MatchStatus.COMPLETED
+          ? chess.moves({ verbose: true }).map((move) => ({
+              from: move.from,
+              to: move.to,
+              promotion: move.promotion,
+            }))
+          : [],
+    };
+  }
+
+  async playMove(actorId: string, id: string, dto: PlayMoveDto) {
+    const updated = await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(Match);
+      const match = await repository.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!match) {
+        throw new NotFoundException('Match not found');
+      }
+      this.assertMatchPlayer(match, actorId);
+      if (
+        match.status !== MatchStatus.SCHEDULED &&
+        match.status !== MatchStatus.IN_PROGRESS
+      ) {
+        throw new BadRequestException('This match is not in progress');
+      }
+
+      const chess = this.chessFor(match.pgn);
+      const playerColor =
+        match.whitePlayerId === actorId ? 'w' : 'b';
+      if (chess.turn() !== playerColor) {
+        throw new BadRequestException('It is not your turn');
+      }
+
+      try {
+        chess.move({
+          from: dto.from,
+          to: dto.to,
+          ...(dto.promotion ? { promotion: dto.promotion } : {}),
+        });
+      } catch {
+        throw new BadRequestException('Illegal chess move');
+      }
+
+      match.pgn = chess.pgn();
+      match.status = chess.isGameOver()
+        ? MatchStatus.COMPLETED
+        : MatchStatus.IN_PROGRESS;
+      match.completedAt = chess.isGameOver() ? new Date() : null;
+      match.result = chess.isGameOver()
+        ? chess.isDraw()
+          ? MatchResult.DRAW
+          : chess.turn() === 'w'
+            ? MatchResult.BLACK_WIN
+            : MatchResult.WHITE_WIN
+        : null;
+
+      const saved = await repository.save(match);
+      if (saved.status === MatchStatus.COMPLETED) {
+        await this.recalculateRatings(manager);
+      }
+      return saved;
+    });
+
+    if (updated.tournamentId) {
+      await this.tournamentPairing.afterMatchUpdate(updated.tournamentId);
+    }
+    return updated;
   }
 
   async update(actorId: string, id: string, dto: UpdateMatchDto) {
@@ -212,6 +304,27 @@ export class MatchesService {
       await this.recalculateRatings(manager);
     });
     return { deleted: true, id };
+  }
+
+  private assertMatchPlayer(match: Match, playerId: string) {
+    if (
+      match.whitePlayerId !== playerId &&
+      match.blackPlayerId !== playerId
+    ) {
+      throw new ForbiddenException('Only a player in this match can view it');
+    }
+  }
+
+  private chessFor(pgn: string | null) {
+    const chess = new Chess();
+    if (pgn) {
+      try {
+        chess.loadPgn(pgn);
+      } catch {
+        throw new BadRequestException('Stored game notation is invalid');
+      }
+    }
+    return chess;
   }
 
   private validateMatch(

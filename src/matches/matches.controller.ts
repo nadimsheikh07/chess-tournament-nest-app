@@ -28,13 +28,18 @@ import { FindMatchesDto } from './dto/find-matches.dto';
 import { UpdateMatchDto } from './dto/update-match.dto';
 import { MatchResult } from './entities/match-result.enum';
 import { MatchStatus } from './entities/match-status.enum';
+import { PlayMoveDto } from './dto/play-move.dto';
+import { MatchmakingGateway } from '../matchmaking/matchmaking.gateway';
 
 @Controller('matches')
 @UseGuards(JwtAuthGuard)
 @ApiTags('Matches')
 @ApiBearerAuth()
 export class MatchesController {
-  constructor(private readonly matchesService: MatchesService) {}
+  constructor(
+    private readonly matchesService: MatchesService,
+    private readonly matchmakingGateway: MatchmakingGateway,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -106,6 +111,43 @@ export class MatchesController {
   @ApiResponse({ status: 401, description: 'Authentication required.' })
   findAll(@Query() query: FindMatchesDto) {
     return this.matchesService.findAll(query);
+  }
+
+  @Get('me')
+  @ApiOperation({ summary: 'List your match history' })
+  @ApiResponse({ status: 200, description: 'Paginated matches for the player.' })
+  findMine(
+    @Req() request: AuthenticatedRequest,
+    @Query() query: FindMatchesDto,
+  ) {
+    return this.matchesService.findAll(query, request.user.userId);
+  }
+
+  @Get(':id/game')
+  @ApiOperation({ summary: 'Get a player’s game state and legal moves' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  getGameState(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.matchesService.getGameState(request.user.userId, id);
+  }
+
+  @Post(':id/moves')
+  @ApiOperation({ summary: 'Submit a legal move in your match' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  async playMove(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: PlayMoveDto,
+  ) {
+    const match = await this.matchesService.playMove(
+      request.user.userId,
+      id,
+      dto,
+    );
+    this.matchmakingGateway.notifyGameUpdated(match);
+    return match;
   }
 
   @Get(':id')

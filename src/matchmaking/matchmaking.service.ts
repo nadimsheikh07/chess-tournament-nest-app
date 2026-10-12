@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import { UserRole } from '../common/enums/user-role.enum';
 import { Match } from '../matches/entities/match.entity';
 import { MatchStatus } from '../matches/entities/match-status.enum';
@@ -34,6 +34,9 @@ export class MatchmakingService {
       if (!user) {
         throw new NotFoundException('User not found');
       }
+      if (user.role !== UserRole.PLAYER) {
+        throw new ForbiddenException('Only students can join matchmaking');
+      }
 
       const queueRepository = manager.getRepository(Matchmaking);
       const existing = await queueRepository.findOne({
@@ -41,6 +44,23 @@ export class MatchmakingService {
       });
       if (existing) {
         throw new BadRequestException('You are already waiting for a match');
+      }
+      const activeMatch = await manager.getRepository(Match).findOne({
+        where: [
+          {
+            whitePlayerId: userId,
+            status: In([MatchStatus.SCHEDULED, MatchStatus.IN_PROGRESS]),
+          },
+          {
+            blackPlayerId: userId,
+            status: In([MatchStatus.SCHEDULED, MatchStatus.IN_PROGRESS]),
+          },
+        ],
+      });
+      if (activeMatch) {
+        throw new BadRequestException(
+          'Finish your current match before finding another opponent',
+        );
       }
 
       const entry = await queueRepository.save(
@@ -91,7 +111,7 @@ export class MatchmakingService {
             whitePlayerId: lockedCandidate.userId,
             blackPlayerId: entry.userId,
             tournamentId: null,
-            status: MatchStatus.SCHEDULED,
+            status: MatchStatus.IN_PROGRESS,
             result: null,
             pgn: null,
             completedAt: null,

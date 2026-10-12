@@ -210,7 +210,10 @@ through these routes.
 | --- | --- | --- | --- |
 | `POST` | `/api/matches` | Coach/admin | Create a match |
 | `GET` | `/api/matches` | Authenticated | Paginated match list |
+| `GET` | `/api/matches/me` | Authenticated | Paginated match history for the signed-in player |
 | `GET` | `/api/matches/:id` | Authenticated | Get one match |
+| `GET` | `/api/matches/:id/game` | Player in match | Get FEN, turn, and legal moves |
+| `POST` | `/api/matches/:id/moves` | Player in match | Submit a chess move |
 | `PATCH` | `/api/matches/:id` | Coach/admin | Update match |
 | `DELETE` | `/api/matches/:id` | Coach/admin | Delete match |
 
@@ -237,6 +240,13 @@ The list supports `page` (default `1`), `limit` (default `10`, max `100`),
 `blackPlayerId`), and `sortOrder` (`ASC` or `DESC`, default `DESC`). Optional
 filters: `status`, `result`, and `tournamentId`.
 
+The game-state endpoint returns `{ match, fen, turn, playerColor, legalMoves }`.
+Submit a move as `{ "from": "e2", "to": "e4" }`; add `"promotion": "q"`,
+`"r"`, `"b"`, or `"n"` when promoting. Moves are validated against the current
+board and turn. The server updates the PGN, completes games when the chess
+rules determine an outcome, and recalculates ratings. A player can only read or
+play a match they are a participant in.
+
 ## Matchmaking
 
 All matchmaking endpoints require a bearer token.
@@ -250,7 +260,9 @@ All matchmaking endpoints require a bearer token.
 | `GET` | `/api/matchmaking/:id` | Owner or coach/admin | Get one queue entry |
 | `DELETE` | `/api/matchmaking/:id` | Owner or coach/admin | Delete an unmatched queue entry |
 
-The join endpoint has no request body; it uses the authenticated user's rating.
+The join endpoint is for player accounts only and has no request body; it uses
+the authenticated user's rating. A player with a scheduled or in-progress match
+must finish it before entering the queue again.
 It returns a `queueEntry` and either the newly created `match` or `null` while
 waiting:
 
@@ -267,6 +279,14 @@ waiting:
 }
 ```
 
+New pairings create an `in_progress` match. When a pairing is created, both
+players receive a `match-found` Socket.IO event containing `{ matchId, match }`
+after the transaction commits. When either player submits a move, both receive
+`game-updated` with `{ matchId }` and can reload the game-state endpoint. Connect
+to the API origin using Socket.IO with the access token in
+`auth: { token: accessToken }`; invalid or expired tokens are disconnected.
+Socket.IO uses the same allowed origins as HTTP CORS.
+
 The queue selects the closest eligible rating. Its acceptable gap starts at
 100 points, expands by 50 points per minute, and caps at 800 points. Queue list
 parameters: `page` (default `1`), `limit` (default `10`, max `100`), `search`
@@ -274,6 +294,17 @@ parameters: `page` (default `1`), `limit` (default `10`, max `100`), `search`
 `updatedAt`, `rating`, `status`, `userId`), `sortOrder` (`ASC`/`DESC`, default
 `ASC`), plus optional `status` (`waiting`, `matched`, `cancelled`) and `userId`.
 Matched entries cannot be deleted.
+
+## Student dashboard workflow
+
+The student dashboard lists `open` and `ongoing` tournaments. Players can
+register while a tournament is `open`; Swiss rounds in an `ongoing` tournament
+remain paired by the tournament system and are not mixed into the general
+matchmaking queue. The dashboard's **Find opponent** action uses the general
+rating-based queue described above. On pairing, both players enter the game
+room; after the game completes, they can return to the dashboard to queue again.
+`GET /api/matches/me` and the leaderboard endpoints supply match history and
+current ranking.
 
 ## Leaderboard
 

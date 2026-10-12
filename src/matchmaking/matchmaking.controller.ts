@@ -12,6 +12,7 @@ import {
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth/jwt-auth.guard';
 import { MatchmakingService } from './matchmaking.service';
+import { MatchmakingGateway } from './matchmaking.gateway';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -29,7 +30,10 @@ import { MatchmakingStatus } from './entities/matchmaking-status.enum';
 @ApiTags('Matchmaking')
 @ApiBearerAuth()
 export class MatchmakingController {
-  constructor(private readonly matchmakingService: MatchmakingService) {}
+  constructor(
+    private readonly matchmakingService: MatchmakingService,
+    private readonly matchmakingGateway: MatchmakingGateway,
+  ) {}
 
   @Post()
   @ApiOperation({
@@ -57,7 +61,14 @@ export class MatchmakingController {
   @ApiResponse({ status: 401, description: 'Authentication required.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
   join(@Req() request: AuthenticatedRequest) {
-    return this.matchmakingService.join(request.user.userId);
+    return this.matchmakingService
+      .join(request.user.userId)
+      .then((result) => {
+        if (result.match) {
+          this.matchmakingGateway.notifyMatchFound(result.match);
+        }
+        return result;
+      });
   }
 
   @Get('me')
