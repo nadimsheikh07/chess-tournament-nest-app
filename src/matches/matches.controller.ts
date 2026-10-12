@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -17,12 +18,16 @@ import {
   ApiBody,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { MatchesService } from './matches.service';
 import { CreateMatchDto } from './dto/create-match.dto';
+import { FindMatchesDto } from './dto/find-matches.dto';
 import { UpdateMatchDto } from './dto/update-match.dto';
+import { MatchResult } from './entities/match-result.enum';
+import { MatchStatus } from './entities/match-status.enum';
 
 @Controller('matches')
 @UseGuards(JwtAuthGuard)
@@ -47,11 +52,53 @@ export class MatchesController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List matches' })
-  @ApiResponse({ status: 200, description: 'Matches ordered newest first.' })
+  @ApiOperation({
+    summary: 'List matches with pagination, search, sorting, and filters',
+  })
+  @ApiQuery({ name: 'page', required: false, example: 1, minimum: 1 })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    example: 10,
+    minimum: 1,
+    maximum: 100,
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search match ID, player IDs, tournament ID, status, or result',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: [
+      'createdAt',
+      'updatedAt',
+      'completedAt',
+      'status',
+      'result',
+      'whitePlayerId',
+      'blackPlayerId',
+    ],
+    example: 'createdAt',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    example: 'DESC',
+  })
+  @ApiQuery({ name: 'status', required: false, enum: MatchStatus })
+  @ApiQuery({ name: 'result', required: false, enum: MatchResult })
+  @ApiQuery({ name: 'tournamentId', required: false, format: 'uuid' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated matches and page metadata.',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid pagination or filter values.' })
   @ApiResponse({ status: 401, description: 'Authentication required.' })
-  findAll() {
-    return this.matchesService.findAll();
+  findAll(@Query() query: FindMatchesDto) {
+    return this.matchesService.findAll(query);
   }
 
   @Get(':id')

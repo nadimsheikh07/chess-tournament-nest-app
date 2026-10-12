@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -17,11 +18,13 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { FindUsersDto } from './dto/find-users.dto';
 import {
   ApiBearerAuth,
   ApiBody,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -39,19 +42,47 @@ export class UsersController {
   @ApiResponse({ status: 201, description: 'User created.' })
   @ApiResponse({ status: 403, description: 'Admin role required.' })
   @ApiResponse({ status: 409, description: 'Email already registered.' })
-  create(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: CreateUserDto,
-  ) {
+  create(@Req() req: AuthenticatedRequest, @Body() dto: CreateUserDto) {
     return this.usersService.adminCreate(req.user.userId, dto);
   }
 
   @Get()
   @ApiOperation({ summary: 'List users (admin only)' })
-  @ApiResponse({ status: 200, description: 'Users returned without credentials.' })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated users returned without credentials.',
+  })
   @ApiResponse({ status: 403, description: 'Admin role required.' })
-  findAll(@Req() req: AuthenticatedRequest) {
-    return this.usersService.adminFindAll(req.user.userId);
+  @ApiQuery({ name: 'page', required: false, example: 1, minimum: 1 })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    example: 10,
+    minimum: 1,
+    maximum: 100,
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search user name, email, or role',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ['name', 'email', 'role', 'rating', 'createdAt', 'updatedAt'],
+    example: 'createdAt',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    example: 'DESC',
+  })
+  findAll(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: FindUsersDto,
+  ) {
+    return this.usersService.adminFindAll(req.user.userId, query);
   }
 
   /**
@@ -104,7 +135,10 @@ export class UsersController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a user by ID (admin only)' })
   @ApiParam({ name: 'id', format: 'uuid' })
-  @ApiResponse({ status: 200, description: 'User returned without credentials.' })
+  @ApiResponse({
+    status: 200,
+    description: 'User returned without credentials.',
+  })
   @ApiResponse({ status: 403, description: 'Admin role required.' })
   @ApiResponse({ status: 404, description: 'User not found.' })
   findOne(
@@ -134,7 +168,10 @@ export class UsersController {
   @ApiOperation({ summary: 'Delete a user (admin only)' })
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiResponse({ status: 200, description: 'User deleted.' })
-  @ApiResponse({ status: 403, description: 'Cannot delete yourself or the last admin.' })
+  @ApiResponse({
+    status: 403,
+    description: 'Cannot delete yourself or the last admin.',
+  })
   @ApiResponse({ status: 404, description: 'User not found.' })
   remove(
     @Req() req: AuthenticatedRequest,

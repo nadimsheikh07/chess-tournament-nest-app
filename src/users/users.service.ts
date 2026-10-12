@@ -14,6 +14,7 @@ import { UserRole } from '../common/enums/user-role.enum';
 import { Match } from '../matches/entities/match.entity';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { FindUsersDto } from './dto/find-users.dto';
 
 @Injectable()
 export class UsersService {
@@ -82,21 +83,59 @@ export class UsersService {
     }
   }
 
-  async adminFindAll(actorId: string) {
+  async adminFindAll(actorId: string, query: FindUsersDto) {
     await this.assertAdmin(actorId);
-    const users = await this.userRepository.find({
-      select: {
-        id: true,
-        name: true,
-        email: true,
-        role: true,
-        rating: true,
-        createdAt: true,
-        updatedAt: true,
+
+    const sortColumns = {
+      name: 'user.name',
+      email: 'user.email',
+      role: 'user.role',
+      rating: 'user.rating',
+      createdAt: 'user.createdAt',
+      updatedAt: 'user.updatedAt',
+    } as const;
+    const sortColumn =
+      sortColumns[query.sortBy as keyof typeof sortColumns] ??
+      sortColumns.createdAt;
+    const sortOrder = query.sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    const queryBuilder = this.userRepository
+      .createQueryBuilder('user')
+      .select([
+        'user.id',
+        'user.name',
+        'user.email',
+        'user.role',
+        'user.rating',
+        'user.createdAt',
+        'user.updatedAt',
+      ]);
+
+    if (query.search?.trim()) {
+      const search = `%${query.search.trim()}%`;
+      queryBuilder.andWhere(
+        '(user.name ILIKE :search OR user.email ILIKE :search OR user.role ILIKE :search)',
+        { search },
+      );
+    }
+
+    queryBuilder
+      .orderBy(sortColumn, sortOrder)
+      .addOrderBy('user.id', 'ASC')
+      .skip((query.page - 1) * query.limit)
+      .take(query.limit);
+
+    const [data, total] = await queryBuilder.getManyAndCount();
+    return {
+      data,
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit),
+        hasNextPage: query.page * query.limit < total,
+        hasPreviousPage: query.page > 1,
       },
-      order: { createdAt: 'DESC' },
-    });
-    return users;
+    };
   }
 
   async adminFindOne(actorId: string, userId: string) {

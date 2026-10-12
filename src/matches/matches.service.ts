@@ -10,6 +10,7 @@ import { UserRole } from '../common/enums/user-role.enum';
 import { Tournament } from '../tournaments/entities/tournament.entity';
 import { User } from '../users/entities/user.entity';
 import { CreateMatchDto } from './dto/create-match.dto';
+import { FindMatchesDto } from './dto/find-matches.dto';
 import { UpdateMatchDto } from './dto/update-match.dto';
 import { MatchResult } from './entities/match-result.enum';
 import { Match } from './entities/match.entity';
@@ -63,8 +64,69 @@ export class MatchesService {
     });
   }
 
-  findAll() {
-    return this.matches.find({ order: { createdAt: 'DESC' } });
+  async findAll(query: FindMatchesDto) {
+    const sortColumns = {
+      createdAt: 'match.createdAt',
+      updatedAt: 'match.updatedAt',
+      completedAt: 'match.completedAt',
+      status: 'match.status',
+      result: 'match.result',
+      whitePlayerId: 'match.whitePlayerId',
+      blackPlayerId: 'match.blackPlayerId',
+    } as const;
+    const sortColumn =
+      sortColumns[query.sortBy as keyof typeof sortColumns] ??
+      sortColumns.createdAt;
+    const sortOrder = query.sortOrder.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    const queryBuilder = this.matches.createQueryBuilder('match');
+
+    if (query.search?.trim()) {
+      queryBuilder.andWhere(
+        `(
+          CAST(match.id AS text) ILIKE :search
+          OR CAST(match.whitePlayerId AS text) ILIKE :search
+          OR CAST(match.blackPlayerId AS text) ILIKE :search
+          OR CAST(match.tournamentId AS text) ILIKE :search
+          OR CAST(match.status AS text) ILIKE :search
+          OR CAST(match.result AS text) ILIKE :search
+        )`,
+        { search: `%${query.search.trim()}%` },
+      );
+    }
+    if (query.status) {
+      queryBuilder.andWhere('match.status = :status', {
+        status: query.status,
+      });
+    }
+    if (query.result) {
+      queryBuilder.andWhere('match.result = :result', {
+        result: query.result,
+      });
+    }
+    if (query.tournamentId) {
+      queryBuilder.andWhere('match.tournamentId = :tournamentId', {
+        tournamentId: query.tournamentId,
+      });
+    }
+
+    queryBuilder
+      .orderBy(sortColumn, sortOrder)
+      .addOrderBy('match.id', 'ASC')
+      .skip((query.page - 1) * query.limit)
+      .take(query.limit);
+
+    const [data, total] = await queryBuilder.getManyAndCount();
+    return {
+      data,
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit),
+        hasNextPage: query.page * query.limit < total,
+        hasPreviousPage: query.page > 1,
+      },
+    };
   }
 
   async findOne(id: string) {

@@ -5,6 +5,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -15,9 +16,13 @@ import {
   ApiBearerAuth,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+
+import { FindMatchmakingDto } from './dto/find-matchmaking.dto';
+import { MatchmakingStatus } from './entities/matchmaking-status.enum';
 
 @Controller('matchmaking')
 @UseGuards(JwtAuthGuard)
@@ -72,11 +77,41 @@ export class MatchmakingController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'List queue entries (coach/admin only)' })
-  @ApiResponse({ status: 200, description: 'Queue entries ordered by join time.' })
+  @ApiOperation({
+    summary: 'List queue entries with pagination, search, sorting, and filters (coach/admin only)',
+  })
+  @ApiQuery({ name: 'page', required: false, example: 1, minimum: 1 })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    example: 10,
+    minimum: 1,
+    maximum: 100,
+  })
+  @ApiQuery({
+    name: 'search',
+    required: false,
+    description: 'Search queue ID, user ID, match ID, status, or rating',
+  })
+  @ApiQuery({
+    name: 'sortBy',
+    required: false,
+    enum: ['queuedAt', 'updatedAt', 'rating', 'status', 'userId'],
+    example: 'queuedAt',
+  })
+  @ApiQuery({
+    name: 'sortOrder',
+    required: false,
+    enum: ['ASC', 'DESC'],
+    example: 'ASC',
+  })
+  @ApiQuery({ name: 'status', required: false, enum: MatchmakingStatus })
+  @ApiQuery({ name: 'userId', required: false, format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'Paginated matchmaking queue.' })
+  @ApiResponse({ status: 400, description: 'Invalid pagination or filter values.' })
   @ApiResponse({ status: 403, description: 'Coach or admin role required.' })
-  findAll(@Req() request: AuthenticatedRequest) {
-    return this.matchmakingService.findAll(request.user.userId);
+  findAll(@Req() request: AuthenticatedRequest, @Query() query: FindMatchmakingDto) {
+    return this.matchmakingService.findAll(request.user.userId, query);
   }
 
   @Get(':id')

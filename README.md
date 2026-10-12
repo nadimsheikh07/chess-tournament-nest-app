@@ -35,10 +35,13 @@ creation, updates, and deletion are restricted to coaches and admins.
 All user endpoints require a bearer access token. `GET /users/me`,
 `PATCH /users/me`, and the `/users/me/*` routes are for the authenticated
 user. `GET /users`, `GET /users/:id`, `POST /users`, `PATCH /users/:id`, and
-`DELETE /users/:id` require an admin role. Admin create/update requests accept
-the `role` values `player`, `coach`, and `admin`; passwords are hashed before
-storage. Users cannot change their own role through profile updates, and the
-last admin cannot be demoted or deleted.
+`DELETE /users/:id` require an admin role. `GET /users` supports pagination,
+search across name/email/role, and sorting with `page`, `limit`, `search`,
+`sortBy`, and `sortOrder` query parameters (for example,
+`GET /users?page=2&limit=20&search=coach&sortBy=rating&sortOrder=DESC`).
+Admin create/update requests accept the `role` values `player`, `coach`, and
+`admin`; passwords are hashed before storage. Users cannot change their own
+role through profile updates, and the last admin cannot be demoted or deleted.
 
 - `POST /matches` creates a scheduled match with `whitePlayerId`,
   `blackPlayerId`, and an optional `tournamentId`.
@@ -53,6 +56,9 @@ last admin cannot be demoted or deleted.
   `DELETE /matchmaking/me` leaves an active queue.
 - Coaches and admins can inspect queue entries using `GET /matchmaking` and
   `GET /matchmaking/:id`.
+- `GET /matchmaking` supports pagination (`page`, `limit`), search across queue
+  ID, user ID, match ID, status, or rating, sorting (`sortBy`, `sortOrder`),
+  and optional `status` and `userId` filters.
 - `GET /leaderboard?page=1&limit=50` returns a paginated leaderboard;
   `GET /leaderboard/:userId` returns one player's standing. Rankings and W/D/L
   statistics are derived from completed matches, so leaderboard entries are

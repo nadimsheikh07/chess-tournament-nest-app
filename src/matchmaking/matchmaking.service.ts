@@ -12,6 +12,7 @@ import { MatchStatus } from '../matches/entities/match-status.enum';
 import { User } from '../users/entities/user.entity';
 import { Matchmaking } from './entities/matchmaking.entity';
 import { MatchmakingStatus } from './entities/matchmaking-status.enum';
+import { FindMatchmakingDto } from './dto/find-matchmaking.dto';
 
 @Injectable()
 export class MatchmakingService {
@@ -137,9 +138,67 @@ export class MatchmakingService {
     });
   }
 
-  async findAll(actorId: string) {
+  async findAll(actorId: string, query: FindMatchmakingDto) {
     await this.assertManager(actorId);
-    return this.queue.find({ order: { queuedAt: 'ASC' } });
+    const sortColumns = {
+      queuedAt: 'entry.queuedAt',
+      updatedAt: 'entry.updatedAt',
+      rating: 'entry.rating',
+      status: 'entry.status',
+      userId: 'entry.userId',
+    } as const;
+    const sortColumn =
+      sortColumns[query.sortBy as keyof typeof sortColumns] ??
+      sortColumns.queuedAt;
+    const sortOrder = query.sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+    const queryBuilder = this.queue.createQueryBuilder('entry');
+
+    if (query.search?.trim()) {
+      const search = query.search.trim();
+      const numericSearch = Number(search);
+      queryBuilder.andWhere(
+        `(
+          CAST(entry.id AS text) ILIKE :search
+          OR CAST(entry.userId AS text) ILIKE :search
+          OR CAST(entry.matchId AS text) ILIKE :search
+          OR CAST(entry.status AS text) ILIKE :search
+          ${Number.isInteger(numericSearch) ? 'OR entry.rating = :rating' : ''}
+        )`,
+        {
+          search: `%${search}%`,
+          ...(Number.isInteger(numericSearch) ? { rating: numericSearch } : {}),
+        },
+      );
+    }
+    if (query.status) {
+      queryBuilder.andWhere('entry.status = :status', {
+        status: query.status,
+      });
+    }
+    if (query.userId) {
+      queryBuilder.andWhere('entry.userId = :userId', {
+        userId: query.userId,
+      });
+    }
+
+    queryBuilder
+      .orderBy(sortColumn, sortOrder)
+      .addOrderBy('entry.id', 'ASC')
+      .skip((query.page - 1) * query.limit)
+      .take(query.limit);
+
+    const [data, total] = await queryBuilder.getManyAndCount();
+    return {
+      data,
+      meta: {
+        total,
+        page: query.page,
+        limit: query.limit,
+        totalPages: Math.ceil(total / query.limit),
+        hasNextPage: query.page * query.limit < total,
+        hasPreviousPage: query.page > 1,
+      },
+    };
   }
 
   async findOne(actorId: string, id: string) {
