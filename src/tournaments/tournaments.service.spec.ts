@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { TournamentsService } from './tournaments.service.js';
+import { TournamentsService } from './tournaments.service';
 
 describe('TournamentsService', () => {
   let service: TournamentsService;

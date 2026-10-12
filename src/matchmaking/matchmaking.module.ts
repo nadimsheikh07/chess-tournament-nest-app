@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { MatchmakingController } from './matchmaking.controller.js';
-import { MatchmakingService } from './matchmaking.service.js';
+import { MatchmakingService } from './matchmaking.service';
+import { MatchmakingController } from './matchmaking.controller';
 
 @Module({
   controllers: [MatchmakingController],
-  providers: [MatchmakingService]
+  providers: [MatchmakingService],
 })
 export class MatchmakingModule {}

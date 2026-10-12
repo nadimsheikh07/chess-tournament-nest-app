@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
-import { LeaderboardController } from './leaderboard.controller.js';
-import { LeaderboardService } from './leaderboard.service.js';
+import { LeaderboardService } from './leaderboard.service';
+import { LeaderboardController } from './leaderboard.controller';
 
 @Module({
   controllers: [LeaderboardController],
-  providers: [LeaderboardService]
+  providers: [LeaderboardService],
 })
 export class LeaderboardModule {}

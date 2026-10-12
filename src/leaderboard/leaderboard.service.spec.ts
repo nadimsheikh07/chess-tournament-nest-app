@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { LeaderboardService } from './leaderboard.service.js';
+import { LeaderboardService } from './leaderboard.service';
 
 describe('LeaderboardService', () => {
   let service: LeaderboardService;
