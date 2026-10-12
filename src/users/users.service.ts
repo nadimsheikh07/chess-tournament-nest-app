@@ -19,6 +19,7 @@ export class UsersService {
         id: true,
         name: true,
         email: true,
+        role: true,
         password: true,
         createdAt: true,
         updatedAt: true,
@@ -63,6 +64,7 @@ export class UsersService {
         name: true,
         email: true,
         refreshTokenHash: true,
+        role: true,
       },
     });
   }

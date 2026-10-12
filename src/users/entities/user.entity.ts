@@ -6,6 +6,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { UserRole } from '../../common/enums/user-role.enum';
 
 @Entity('users')
 export class User {
@@ -21,6 +22,9 @@ export class User {
 
   @Column({ type: 'varchar', length: 255, select: false })
   password: string;
+
+  @Column({ type: 'varchar', length: 20, default: UserRole.PLAYER })
+  role: UserRole;
 
   @Column({
     name: 'refresh_token_hash',

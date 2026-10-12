@@ -9,6 +9,7 @@ import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 
 import { UsersService } from '../users/users.service';
+import { UserRole } from '../common/enums/user-role.enum';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 
@@ -16,6 +17,7 @@ interface TokenPayload {
   sub: string;
   email: string;
   type: 'access' | 'refresh';
+  role?: UserRole;
   jti?: string;
 }
 
@@ -53,7 +55,7 @@ export class AuthService {
       throw error;
     }
 
-    return this.issueTokens(user.id, user.email);
+    return this.issueTokens(user.id, user.email, user.role);
   }
 
   async login(dto: LoginDto) {
@@ -63,7 +65,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
-    return this.issueTokens(user.id, user.email);
+    return this.issueTokens(user.id, user.email, user.role);
   }
 
   async refresh(refreshToken: string) {
@@ -94,7 +96,7 @@ export class AuthService {
     }
 
     // Rotation: replace the stored hash with a hash of the new token.
-    return this.issueTokens(user.id, user.email);
+    return this.issueTokens(user.id, user.email, user.role);
   }
 
   async logout(userId: string): Promise<{ message: string }> {
@@ -103,7 +105,7 @@ export class AuthService {
     return { message: 'Logged out successfully' };
   }
 
-  private async issueTokens(userId: string, email: string) {
+  private async issueTokens(userId: string, email: string, role: UserRole) {
     const accessSecret = this.config.getOrThrow<string>('JWT_ACCESS_SECRET');
     const refreshSecret = this.config.getOrThrow<string>('JWT_REFRESH_SECRET');
 
@@ -114,12 +116,14 @@ export class AuthService {
       sub: userId,
       email,
       type: 'access',
+      role,
     };
 
     const refreshPayload: TokenPayload = {
       sub: userId,
       email,
       type: 'refresh',
+      role,
       jti: randomUUID(),
     };
 
