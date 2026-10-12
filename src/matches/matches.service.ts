@@ -145,17 +145,83 @@ export class MatchesService {
   }
 
   async getGameState(actorId: string, id: string) {
-    const match = await this.findOne(id);
-    this.assertMatchPlayer(match, actorId);
+    const { match, clockExpired } = await this.dataSource.transaction(
+      async (manager) => {
+        const repository = manager.getRepository(Match);
+        const match = await repository.findOne({
+          where: { id },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!match) {
+          throw new NotFoundException('Match not found');
+        }
+        this.assertMatchPlayer(match, actorId);
+
+        let clockExpired = false;
+        const now = new Date();
+        if (
+          match.status === MatchStatus.SCHEDULED &&
+          match.clockStartedAt === null
+        ) {
+          match.status = MatchStatus.IN_PROGRESS;
+          match.clockStartedAt = now;
+          await repository.save(match);
+        } else if (match.status === MatchStatus.IN_PROGRESS) {
+          if (!match.clockStartedAt) {
+            match.clockStartedAt = now;
+            await repository.save(match);
+          } else if (
+            this.remainingTime(match, this.chessFor(match.pgn).turn(), now) <=
+            0
+          ) {
+            const activeColor = this.chessFor(match.pgn).turn();
+            match[activeColor === 'w' ? 'whiteTimeMs' : 'blackTimeMs'] = 0;
+            await this.completeMatch(
+              manager,
+              match,
+              activeColor === 'w'
+                ? MatchResult.BLACK_WIN
+                : MatchResult.WHITE_WIN,
+              'timeout',
+              now,
+            );
+            clockExpired = true;
+          }
+        }
+        return { match, clockExpired };
+      },
+    );
+
+    if (clockExpired && match.tournamentId) {
+      await this.tournamentPairing.afterMatchUpdate(match.tournamentId);
+    }
+
     const chess = this.chessFor(match.pgn);
-    const playerColor =
-      match.whitePlayerId === actorId ? 'w' : 'b';
+    const playerColor = match.whitePlayerId === actorId ? 'w' : 'b';
+    const snapshotAt = new Date();
+    const whiteTimeMs = this.remainingTime(match, 'w', snapshotAt);
+    const blackTimeMs = this.remainingTime(match, 'b', snapshotAt);
+    const history = chess.history();
 
     return {
       match,
       fen: chess.fen(),
       turn: chess.turn(),
       playerColor,
+      pgn: chess.pgn(),
+      moves: Array.from(
+        { length: Math.ceil(history.length / 2) },
+        (_, index) => ({
+          number: index + 1,
+          white: history[index * 2],
+          black: history[index * 2 + 1] ?? null,
+        }),
+      ),
+      whiteTimeMs,
+      blackTimeMs,
+      clockStartedAt: match.clockStartedAt,
+      clockSnapshotAt: snapshotAt,
+      clockExpired,
       legalMoves:
         chess.turn() === playerColor && match.status !== MatchStatus.COMPLETED
           ? chess.moves({ verbose: true }).map((move) => ({
@@ -188,6 +254,24 @@ export class MatchesService {
       const chess = this.chessFor(match.pgn);
       const playerColor =
         match.whitePlayerId === actorId ? 'w' : 'b';
+      const now = new Date();
+      if (!match.clockStartedAt) {
+        match.clockStartedAt = now;
+      }
+      const activeColor = chess.turn();
+      const activeRemainingMs = this.remainingTime(match, activeColor, now);
+      if (activeRemainingMs <= 0) {
+        match[activeColor === 'w' ? 'whiteTimeMs' : 'blackTimeMs'] = 0;
+        const saved = await this.completeMatch(
+          manager,
+          match,
+          activeColor === 'w' ? MatchResult.BLACK_WIN : MatchResult.WHITE_WIN,
+          'timeout',
+          now,
+        );
+        return saved;
+      }
+      const remainingMs = this.remainingTime(match, playerColor, now);
       if (chess.turn() !== playerColor) {
         throw new BadRequestException('It is not your turn');
       }
@@ -203,10 +287,15 @@ export class MatchesService {
       }
 
       match.pgn = chess.pgn();
+      if (playerColor === 'w') {
+        match.whiteTimeMs = remainingMs;
+      } else {
+        match.blackTimeMs = remainingMs;
+      }
       match.status = chess.isGameOver()
         ? MatchStatus.COMPLETED
         : MatchStatus.IN_PROGRESS;
-      match.completedAt = chess.isGameOver() ? new Date() : null;
+      match.completedAt = chess.isGameOver() ? now : null;
       match.result = chess.isGameOver()
         ? chess.isDraw()
           ? MatchResult.DRAW
@@ -214,6 +303,14 @@ export class MatchesService {
             ? MatchResult.BLACK_WIN
             : MatchResult.WHITE_WIN
         : null;
+      match.endReason = chess.isGameOver()
+        ? chess.isCheckmate()
+          ? 'checkmate'
+          : chess.isStalemate()
+            ? 'stalemate'
+            : 'draw'
+        : null;
+      match.clockStartedAt = chess.isGameOver() ? null : now;
 
       const saved = await repository.save(match);
       if (saved.status === MatchStatus.COMPLETED) {
@@ -226,6 +323,59 @@ export class MatchesService {
       await this.tournamentPairing.afterMatchUpdate(updated.tournamentId);
     }
     return updated;
+  }
+
+  async resign(actorId: string, id: string) {
+    const match = await this.dataSource.transaction(async (manager) => {
+      const repository = manager.getRepository(Match);
+      const match = await repository.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!match) {
+        throw new NotFoundException('Match not found');
+      }
+      this.assertMatchPlayer(match, actorId);
+      if (
+        match.status !== MatchStatus.SCHEDULED &&
+        match.status !== MatchStatus.IN_PROGRESS
+      ) {
+        throw new BadRequestException('This match is not in progress');
+      }
+
+      const color = match.whitePlayerId === actorId ? 'w' : 'b';
+      const activeColor = this.chessFor(match.pgn).turn();
+      const now = new Date();
+      const activeRemainingMs = this.remainingTime(match, activeColor, now);
+      if (activeRemainingMs <= 0) {
+        match[activeColor === 'w' ? 'whiteTimeMs' : 'blackTimeMs'] = 0;
+        return this.completeMatch(
+          manager,
+          match,
+          activeColor === 'w' ? MatchResult.BLACK_WIN : MatchResult.WHITE_WIN,
+          'timeout',
+          now,
+        );
+      }
+      const remainingMs = this.remainingTime(match, color, now);
+      if (color === 'w') {
+        match.whiteTimeMs = remainingMs;
+      } else {
+        match.blackTimeMs = remainingMs;
+      }
+      return this.completeMatch(
+        manager,
+        match,
+        color === 'w' ? MatchResult.BLACK_WIN : MatchResult.WHITE_WIN,
+        'resignation',
+        now,
+      );
+    });
+
+    if (match.tournamentId) {
+      await this.tournamentPairing.afterMatchUpdate(match.tournamentId);
+    }
+    return match;
   }
 
   async update(actorId: string, id: string, dto: UpdateMatchDto) {
@@ -325,6 +475,43 @@ export class MatchesService {
       }
     }
     return chess;
+  }
+
+  private remainingTime(
+    match: Match,
+    color: 'w' | 'b',
+    now: Date,
+  ): number {
+    const storedTime =
+      color === 'w' ? match.whiteTimeMs : match.blackTimeMs;
+    if (
+      match.status !== MatchStatus.IN_PROGRESS ||
+      !match.clockStartedAt ||
+      this.chessFor(match.pgn).turn() !== color
+    ) {
+      return storedTime;
+    }
+    return Math.max(
+      0,
+      storedTime - Math.max(0, now.getTime() - match.clockStartedAt.getTime()),
+    );
+  }
+
+  private async completeMatch(
+    manager: EntityManager,
+    match: Match,
+    result: MatchResult,
+    endReason: 'checkmate' | 'stalemate' | 'draw' | 'resignation' | 'timeout',
+    completedAt: Date,
+  ) {
+    match.status = MatchStatus.COMPLETED;
+    match.result = result;
+    match.endReason = endReason;
+    match.completedAt = completedAt;
+    match.clockStartedAt = null;
+    const saved = await manager.getRepository(Match).save(match);
+    await this.recalculateRatings(manager);
+    return saved;
   }
 
   private validateMatch(

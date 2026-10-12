@@ -7,7 +7,10 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { UserRole } from '../common/enums/user-role.enum';
-import { Match } from '../matches/entities/match.entity';
+import {
+  DEFAULT_MATCH_CLOCK_MS,
+  Match,
+} from '../matches/entities/match.entity';
 import { MatchStatus } from '../matches/entities/match-status.enum';
 import { User } from '../users/entities/user.entity';
 import { Matchmaking } from './entities/matchmaking.entity';
@@ -114,6 +117,10 @@ export class MatchmakingService {
             status: MatchStatus.IN_PROGRESS,
             result: null,
             pgn: null,
+            whiteTimeMs: DEFAULT_MATCH_CLOCK_MS,
+            blackTimeMs: DEFAULT_MATCH_CLOCK_MS,
+            clockStartedAt: new Date(),
+            endReason: null,
             completedAt: null,
           }),
         );

@@ -124,13 +124,26 @@ export class MatchesController {
   }
 
   @Get(':id/game')
-  @ApiOperation({ summary: 'Get a player’s game state and legal moves' })
+  @ApiOperation({
+    summary: 'Get a player’s game state, clocks, PGN, and legal moves',
+    description:
+      'Returns the authoritative 10-minute, no-increment clocks and finalizes an expired clock.',
+  })
   @ApiParam({ name: 'id', format: 'uuid' })
-  getGameState(
+  async getGameState(
     @Req() request: AuthenticatedRequest,
     @Param('id', ParseUUIDPipe) id: string,
   ) {
-    return this.matchesService.getGameState(request.user.userId, id);
+    const state = await this.matchesService.getGameState(
+      request.user.userId,
+      id,
+    );
+    if (state.clockExpired) {
+      this.matchmakingGateway.notifyGameUpdated(state.match);
+    }
+    const publicState = { ...state };
+    delete publicState.clockExpired;
+    return publicState;
   }
 
   @Post(':id/moves')
@@ -146,6 +159,21 @@ export class MatchesController {
       id,
       dto,
     );
+    this.matchmakingGateway.notifyGameUpdated(match);
+    return match;
+  }
+
+  @Post(':id/resign')
+  @ApiOperation({
+    summary: 'Resign from your match',
+    description: 'Ends the match, records the result, and recalculates ratings.',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  async resign(
+    @Req() request: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const match = await this.matchesService.resign(request.user.userId, id);
     this.matchmakingGateway.notifyGameUpdated(match);
     return match;
   }

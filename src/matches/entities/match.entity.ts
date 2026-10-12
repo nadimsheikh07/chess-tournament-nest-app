@@ -9,6 +9,8 @@ import {
 import { MatchResult } from './match-result.enum';
 import { MatchStatus } from './match-status.enum';
 
+export const DEFAULT_MATCH_CLOCK_MS = 10 * 60 * 1000;
+
 @Entity('matches')
 @Index(['whitePlayerId', 'createdAt'])
 @Index(['blackPlayerId', 'createdAt'])
@@ -40,6 +42,24 @@ export class Match {
 
   @Column({ type: 'text', nullable: true })
   pgn: string | null;
+
+  @Column({ type: 'int', default: DEFAULT_MATCH_CLOCK_MS })
+  whiteTimeMs: number;
+
+  @Column({ type: 'int', default: DEFAULT_MATCH_CLOCK_MS })
+  blackTimeMs: number;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  clockStartedAt: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  endReason:
+    | 'checkmate'
+    | 'stalemate'
+    | 'draw'
+    | 'resignation'
+    | 'timeout'
+    | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   completedAt: Date | null;
