@@ -107,6 +107,30 @@ role through profile updates, and the last admin cannot be demoted or deleted.
   draw, and 0 per loss. Rankings sort by points, wins, rating, and name, in
   that order; ranks are sequential. Leaderboard entries are read-only.
 
+### Creating the initial admin
+
+The `admin` role is the highest-privilege role in this application. After
+building the backend and configuring its database in `.env`, create an admin
+from PowerShell by setting one-time credentials and running:
+
+```powershell
+$env:SUPER_ADMIN_NAME = "Chess Administrator"
+$env:SUPER_ADMIN_EMAIL = "admin@example.com"
+npm run build
+$securePassword = Read-Host "Admin password" -AsSecureString
+$passwordPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($securePassword)
+try {
+  $env:SUPER_ADMIN_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($passwordPointer)
+} finally {
+  [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($passwordPointer)
+}
+npm run create:super-admin
+Remove-Item Env:SUPER_ADMIN_NAME, Env:SUPER_ADMIN_EMAIL, Env:SUPER_ADMIN_PASSWORD
+```
+
+The command hashes the password before saving and fails if the email already
+belongs to a user. If setup fails, it returns a non-zero exit code.
+
 ### Real-time Socket.IO events
 
 Clients connect to the backend Socket.IO origin with
