@@ -4,12 +4,16 @@ import { Repository } from 'typeorm';
 
 import { User } from './entities/user.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UserRole } from '../common/enums/user-role.enum';
+import { Match } from '../matches/entities/match.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Match)
+    private readonly matchRepository: Repository<Match>,
   ) {}
 
   async findByEmail(email: string): Promise<User | null> {
@@ -42,6 +46,8 @@ export class UsersService {
       name: data.name.trim(),
       email: data.email.trim().toLowerCase(),
       password: data.password,
+      role: UserRole.PLAYER,
+      rating: 1200,
     });
 
     return this.userRepository.save(user);
@@ -85,6 +91,7 @@ export class UsersService {
       id: user.id,
       name: user.name,
       email: user.email,
+      rating: user.rating,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
@@ -116,22 +123,19 @@ export class UsersService {
       id: updatedUser.id,
       name: updatedUser.name,
       email: updatedUser.email,
+      rating: updatedUser.rating,
       createdAt: updatedUser.createdAt,
       updatedAt: updatedUser.updatedAt,
     };
   }
 
-  /**
-   * Get matches for the authenticated user.
-   * Implement after defining the match entity and relationship.
-   */
   async getMyMatches(userId: string) {
     await this.ensureUserExists(userId);
 
-    return {
-      message: 'Match listing is not implemented yet',
-      data: [],
-    };
+    return this.matchRepository.find({
+      where: [{ whitePlayerId: userId }, { blackPlayerId: userId }],
+      order: { createdAt: 'DESC' },
+    });
   }
 
   /**

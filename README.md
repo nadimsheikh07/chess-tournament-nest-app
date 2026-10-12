@@ -25,6 +25,35 @@
 
 [Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
 
+## Chess APIs
+
+All match and matchmaking endpoints require a bearer access token. Match
+creation, updates, and deletion are restricted to coaches and admins.
+
+- `POST /matches` creates a scheduled match with `whitePlayerId`,
+  `blackPlayerId`, and an optional `tournamentId`.
+- `GET /matches` and `GET /matches/:id` retrieve matches.
+- `PATCH /matches/:id` updates match details. Mark a match `completed` and
+  provide `result` as `white_win`, `black_win`, or `draw` to record its result.
+- `DELETE /matches/:id` removes a match.
+- `POST /matchmaking` queues the authenticated player using their current Elo
+  rating. It pairs the closest eligible waiting player; the allowable rating
+  difference starts at 100 and widens by 50 points per minute, up to 800.
+- `GET /matchmaking/me` returns the player's latest queue entry, and
+  `DELETE /matchmaking/me` leaves an active queue.
+- Coaches and admins can inspect queue entries using `GET /matchmaking` and
+  `GET /matchmaking/:id`.
+- `GET /leaderboard?page=1&limit=50` returns a paginated leaderboard;
+  `GET /leaderboard/:userId` returns one player's standing. Rankings and W/D/L
+  statistics are derived from completed matches, so leaderboard entries are
+  read-only.
+
+Players begin at 1200 Elo. Ratings are recalculated from completed match
+results whenever a match is created, updated, or deleted. Database schema
+synchronization is development-only; production deployments must add the
+`users.rating` column and the matches/matchmaking tables through a database
+migration before using these APIs.
+
 ## Project setup
 
 ```bash

@@ -26,6 +26,9 @@ export class User {
   @Column({ type: 'varchar', length: 20, default: UserRole.PLAYER })
   role: UserRole;
 
+  @Column({ type: 'int', default: 1200 })
+  rating: number;
+
   @Column({
     name: 'refresh_token_hash',
     type: 'varchar',

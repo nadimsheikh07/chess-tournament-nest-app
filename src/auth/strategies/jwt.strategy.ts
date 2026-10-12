@@ -9,7 +9,7 @@ export interface AccessTokenPayload {
   sub: string;
   email: string;
   type: 'access';
-  role: UserRole;
+  role?: UserRole;
 }
 
 @Injectable()
@@ -30,7 +30,7 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     return {
       userId: payload.sub,
       email: payload.email,
-      role: payload.role,
+      role: payload.role ?? UserRole.PLAYER,
     };
   }
 }
