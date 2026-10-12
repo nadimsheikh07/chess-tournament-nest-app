@@ -10,6 +10,7 @@ import { LeaderboardModule } from './leaderboard/leaderboard.module';
 import { MatchmakingModule } from './matchmaking/matchmaking.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { DevtoolsModule } from '@nestjs/devtools-integration';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -18,6 +19,9 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: '.env',
+    }),
+    DevtoolsModule.register({
+      http: process.env.NODE_ENV !== 'production',
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
