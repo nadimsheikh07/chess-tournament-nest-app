@@ -12,6 +12,19 @@ async function bootstrap() {
 
   app.use(helmet());
 
+  const allowedOrigins = (
+    process.env.CORS_ORIGINS ?? 'http://localhost:3001,http://localhost:5173'
+  )
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  app.enableCors({
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Authorization', 'Content-Type'],
+  });
+
   app.setGlobalPrefix('api');
 
   app.useGlobalPipes(

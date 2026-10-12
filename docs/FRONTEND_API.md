@@ -12,6 +12,19 @@ Development: http://localhost:3000
 Production:  https://<your-api-host>
 ```
 
+For browser requests from a different origin, configure the backend's
+`CORS_ORIGINS` environment variable as a comma-separated list of exact frontend
+origins, including the scheme and port when applicable. For example:
+
+```text
+CORS_ORIGINS=http://localhost:5173,https://chess.example.com
+```
+
+The development default allows `http://localhost:3000` and
+`http://localhost:5173`. Set the production frontend origin explicitly when
+deploying. The browser's `strict-origin-when-cross-origin` referrer policy is
+normal and does not itself indicate a CORS failure.
+
 All application routes use the `/api` prefix. Send JSON request bodies with:
 
 ```http
