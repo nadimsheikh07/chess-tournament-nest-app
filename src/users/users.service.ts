@@ -1,11 +1,19 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as bcrypt from 'bcrypt';
 
 import { User } from './entities/user.entity';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UserRole } from '../common/enums/user-role.enum';
 import { Match } from '../matches/entities/match.entity';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 
 @Injectable()
 export class UsersService {
@@ -53,6 +61,117 @@ export class UsersService {
     return this.userRepository.save(user);
   }
 
+  async adminCreate(actorId: string, dto: CreateUserDto) {
+    await this.assertAdmin(actorId);
+    const password = await bcrypt.hash(dto.password, 12);
+    const user = this.userRepository.create({
+      name: dto.name.trim(),
+      email: dto.email.trim().toLowerCase(),
+      password,
+      role: dto.role ?? UserRole.PLAYER,
+      rating: 1200,
+    });
+
+    try {
+      return this.toPublicUser(await this.userRepository.save(user));
+    } catch (error) {
+      if ((error as { code?: string })?.code === '23505') {
+        throw new ConflictException('Email already registered');
+      }
+      throw error;
+    }
+  }
+
+  async adminFindAll(actorId: string) {
+    await this.assertAdmin(actorId);
+    const users = await this.userRepository.find({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        rating: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      order: { createdAt: 'DESC' },
+    });
+    return users;
+  }
+
+  async adminFindOne(actorId: string, userId: string) {
+    await this.assertAdmin(actorId);
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    return this.toPublicUser(user);
+  }
+
+  async adminUpdate(actorId: string, userId: string, dto: UpdateUserDto) {
+    await this.assertAdmin(actorId);
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (dto.name !== undefined) {
+      user.name = dto.name.trim();
+    }
+    if (dto.email !== undefined) {
+      user.email = dto.email.trim().toLowerCase();
+    }
+    if (dto.role !== undefined) {
+      if (user.role === UserRole.ADMIN && dto.role !== UserRole.ADMIN) {
+        const adminCount = await this.userRepository.countBy({
+          role: UserRole.ADMIN,
+        });
+        if (adminCount <= 1) {
+          throw new ForbiddenException('Cannot demote the last admin account');
+        }
+      }
+      user.role = dto.role;
+    }
+    if (dto.password !== undefined) {
+      user.password = await bcrypt.hash(dto.password, 12);
+    }
+
+    try {
+      return this.toPublicUser(await this.userRepository.save(user));
+    } catch (error) {
+      if ((error as { code?: string })?.code === '23505') {
+        throw new ConflictException('Email already registered');
+      }
+      throw error;
+    }
+  }
+
+  async adminDelete(actorId: string, userId: string) {
+    await this.assertAdmin(actorId);
+    if (actorId === userId) {
+      throw new ForbiddenException('You cannot delete your own account');
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: userId } });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    if (user.role === UserRole.ADMIN) {
+      const adminCount = await this.userRepository.countBy({
+        role: UserRole.ADMIN,
+      });
+      if (adminCount <= 1) {
+        throw new ForbiddenException('Cannot delete the last admin account');
+      }
+    }
+
+    await this.userRepository.remove(user);
+    return { deleted: true, id: userId };
+  }
+
   async updateRefreshTokenHash(
     userId: string,
     refreshTokenHash: string | null,
@@ -91,6 +210,7 @@ export class UsersService {
       id: user.id,
       name: user.name,
       email: user.email,
+      role: user.role,
       rating: user.rating,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
@@ -123,6 +243,7 @@ export class UsersService {
       id: updatedUser.id,
       name: updatedUser.name,
       email: updatedUser.email,
+      role: updatedUser.role,
       rating: updatedUser.rating,
       createdAt: updatedUser.createdAt,
       updatedAt: updatedUser.updatedAt,
@@ -159,5 +280,30 @@ export class UsersService {
     if (!exists) {
       throw new NotFoundException('User not found');
     }
+  }
+
+  private async assertAdmin(actorId: string): Promise<void> {
+    const actor = await this.userRepository.findOne({
+      where: { id: actorId },
+      select: { id: true, role: true },
+    });
+    if (!actor) {
+      throw new NotFoundException('User not found');
+    }
+    if (actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('Admin role required');
+    }
+  }
+
+  private toPublicUser(user: User) {
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      rating: user.rating,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
   }
 }

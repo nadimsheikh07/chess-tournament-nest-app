@@ -30,6 +30,16 @@
 All match and matchmaking endpoints require a bearer access token. Match
 creation, updates, and deletion are restricted to coaches and admins.
 
+### User management
+
+All user endpoints require a bearer access token. `GET /users/me`,
+`PATCH /users/me`, and the `/users/me/*` routes are for the authenticated
+user. `GET /users`, `GET /users/:id`, `POST /users`, `PATCH /users/:id`, and
+`DELETE /users/:id` require an admin role. Admin create/update requests accept
+the `role` values `player`, `coach`, and `admin`; passwords are hashed before
+storage. Users cannot change their own role through profile updates, and the
+last admin cannot be demoted or deleted.
+
 - `POST /matches` creates a scheduled match with `whitePlayerId`,
   `blackPlayerId`, and an optional `tournamentId`.
 - `GET /matches` and `GET /matches/:id` retrieve matches.

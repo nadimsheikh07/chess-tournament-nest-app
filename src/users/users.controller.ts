@@ -1,20 +1,66 @@
-import { Body, Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth/jwt-auth.guard';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import type { AuthenticatedRequest } from '../common/interfaces/authenticated-request.interface';
+import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
+@ApiTags('Users')
+@ApiBearerAuth()
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Create a user (admin only)' })
+  @ApiBody({ type: CreateUserDto })
+  @ApiResponse({ status: 201, description: 'User created.' })
+  @ApiResponse({ status: 403, description: 'Admin role required.' })
+  @ApiResponse({ status: 409, description: 'Email already registered.' })
+  create(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateUserDto,
+  ) {
+    return this.usersService.adminCreate(req.user.userId, dto);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'List users (admin only)' })
+  @ApiResponse({ status: 200, description: 'Users returned without credentials.' })
+  @ApiResponse({ status: 403, description: 'Admin role required.' })
+  findAll(@Req() req: AuthenticatedRequest) {
+    return this.usersService.adminFindAll(req.user.userId);
+  }
 
   /**
    * GET /api/v1/users/me
    * Get the authenticated user's profile.
    */
   @Get('me')
+  @ApiOperation({ summary: 'Get your profile, role, and rating' })
+  @ApiResponse({ status: 200, description: 'Authenticated user profile.' })
   getProfile(@Req() req: AuthenticatedRequest) {
     return this.usersService.getProfile(req.user.userId);
   }
@@ -24,6 +70,12 @@ export class UsersController {
    * Update the authenticated user's profile.
    */
   @Patch('me')
+  @ApiOperation({
+    summary: 'Update your profile',
+    description: 'Name and email only. Role and rating are not user-editable.',
+  })
+  @ApiBody({ type: UpdateProfileDto })
+  @ApiResponse({ status: 200, description: 'Profile updated.' })
   updateProfile(
     @Req() req: AuthenticatedRequest,
     @Body() dto: UpdateProfileDto,
@@ -47,5 +99,47 @@ export class UsersController {
   @Get('me/schedule')
   getMySchedule(@Req() req: AuthenticatedRequest) {
     return this.usersService.getMySchedule(req.user.userId);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get a user by ID (admin only)' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'User returned without credentials.' })
+  @ApiResponse({ status: 403, description: 'Admin role required.' })
+  @ApiResponse({ status: 404, description: 'User not found.' })
+  findOne(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.usersService.adminFindOne(req.user.userId, id);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a user, including role (admin only)' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiBody({ type: UpdateUserDto })
+  @ApiResponse({ status: 200, description: 'User updated.' })
+  @ApiResponse({ status: 403, description: 'Admin role required.' })
+  @ApiResponse({ status: 404, description: 'User not found.' })
+  @ApiResponse({ status: 409, description: 'Email already registered.' })
+  update(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateUserDto,
+  ) {
+    return this.usersService.adminUpdate(req.user.userId, id, dto);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a user (admin only)' })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 200, description: 'User deleted.' })
+  @ApiResponse({ status: 403, description: 'Cannot delete yourself or the last admin.' })
+  @ApiResponse({ status: 404, description: 'User not found.' })
+  remove(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.usersService.adminDelete(req.user.userId, id);
   }
 }
