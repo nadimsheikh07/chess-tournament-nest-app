@@ -147,13 +147,21 @@ export class TournamentPairingService {
       throw new BadRequestException('Tournament time control is invalid');
     }
 
-    for (let roundIndex = 0; roundIndex < tournament.currentRound; roundIndex++) {
+    for (
+      let roundIndex = 0;
+      roundIndex < tournament.currentRound;
+      roundIndex++
+    ) {
       const roundSlots = [fixed, ...rotating];
       const roundMatches: {
         left: TournamentParticipant | null;
         right: TournamentParticipant | null;
       }[] = [];
-      for (let pairIndex = 0; pairIndex < roundSlots.length / 2; pairIndex++) {
+      for (
+        let pairIndex = 0;
+        pairIndex < roundSlots.length / 2;
+        pairIndex++
+      ) {
         roundMatches.push({
           left: roundSlots[pairIndex],
           right: roundSlots[roundSlots.length - 1 - pairIndex],

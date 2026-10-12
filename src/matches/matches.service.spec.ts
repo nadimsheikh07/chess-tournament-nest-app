@@ -208,12 +208,18 @@ describe('MatchesService live games', () => {
       id: playerWhite,
       role: UserRole.COACH,
     });
-    matchRepository.findOne.mockResolvedValue(createMatch());
+    const match = createMatch({
+      status: MatchStatus.SCHEDULED,
+      clockStartedAt: null,
+    });
+    matchRepository.findOne.mockResolvedValue(match);
 
     const state = await service.getGameState(playerWhite, matchId);
 
     expect(state.playerColor).toBeNull();
     expect(state.legalMoves).toEqual([]);
+    expect(match.status).toBe(MatchStatus.SCHEDULED);
+    expect(match.clockStartedAt).toBeNull();
   });
 
   it('completes a game when the opponent accepts a pending draw offer', async () => {

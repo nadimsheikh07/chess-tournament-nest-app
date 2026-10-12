@@ -47,11 +47,12 @@ Coaches and admins can create and manage tournaments. A tournament starts in
 `timeControl` in `minutes+increment` format (for example, `5+0`); it defaults
 to `5+0` when omitted.
 
-Pairings use Swiss-style rounds: players are grouped by score, repeat opponents
-are avoided when possible, and an odd field receives a bye. The number of
-rounds is `ceil(log2(registered participants))`. Each round is created
-automatically after all its matches are completed. Tournament matches cannot
-be manually created, reassigned, cancelled, or deleted.
+Pairings use a complete round robin: every pair meets once, with `n - 1` rounds
+for an even field and `n` rounds for an odd field. In an odd field, each player
+receives one rotating bye. Each round is created automatically after all its
+matches are completed. Tournament matches cannot be manually created,
+reassigned, cancelled, or deleted. Tournament time controls such as `5+3`
+apply the increment to each legal move.
 
 - `POST /tournaments` creates a draft; `GET /tournaments` lists tournaments.
 - `PATCH /tournaments/:id` updates a draft/open tournament, including changing
@@ -135,7 +136,10 @@ belongs to a user. If setup fails, it returns a non-zero exit code.
 
 Clients connect to the backend Socket.IO origin with
 `auth: { "token": "<access-token>" }`. The server authenticates the access
-token and joins the client's player room. The current event contract is:
+token and joins the client's player room. Match participants, coaches, and
+admins can subscribe to a match room with `watch-match`; spectators can read
+the live board but cannot submit moves. Reconnecting clients reload the
+server-persisted board and clock snapshot. The current event contract is:
 
 | Event | Payload | Direction |
 | --- | --- | --- |

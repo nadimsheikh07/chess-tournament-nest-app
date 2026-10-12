@@ -146,11 +146,12 @@ export class MatchesController {
       request.user.userId,
       id,
     );
-    if (state.clockExpired) {
+    if (state.clockExpired || state.clockStarted) {
       this.matchmakingGateway.notifyGameUpdated(state.match);
     }
-    const { clockExpired, ...publicState } = state;
+    const { clockExpired, clockStarted, ...publicState } = state;
     void clockExpired;
+    void clockStarted;
     return publicState;
   }
 

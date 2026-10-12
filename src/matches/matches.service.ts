@@ -145,8 +145,8 @@ export class MatchesService {
   }
 
   async getGameState(actorId: string, id: string) {
-    const { match, clockExpired, playerColor } = await this.dataSource.transaction(
-      async (manager) => {
+    const { match, clockExpired, clockStarted, playerColor } =
+      await this.dataSource.transaction(async (manager) => {
         const repository = manager.getRepository(Match);
         const match = await repository.findOne({
           where: { id },
@@ -162,14 +162,17 @@ export class MatchesService {
         );
 
         let clockExpired = false;
+        let clockStarted = false;
         const now = new Date();
         if (
           match.status === MatchStatus.SCHEDULED &&
-          match.clockStartedAt === null
+          match.clockStartedAt === null &&
+          playerColor !== null
         ) {
           match.status = MatchStatus.IN_PROGRESS;
           match.clockStartedAt = now;
           await repository.save(match);
+          clockStarted = true;
         } else if (match.status === MatchStatus.IN_PROGRESS) {
           if (!match.clockStartedAt) {
             match.clockStartedAt = now;
@@ -192,9 +195,8 @@ export class MatchesService {
             clockExpired = true;
           }
         }
-        return { match, clockExpired, playerColor };
-      },
-    );
+        return { match, clockExpired, clockStarted, playerColor };
+      });
 
     if (clockExpired && match.tournamentId) {
       await this.tournamentPairing.afterMatchUpdate(match.tournamentId);
@@ -230,6 +232,7 @@ export class MatchesService {
       clockStartedAt: match.clockStartedAt,
       clockSnapshotAt: snapshotAt,
       clockExpired,
+      clockStarted,
       legalMoves:
         playerColor !== null &&
         chess.turn() === playerColor &&
@@ -569,33 +572,33 @@ export class MatchesService {
     ) {
       throw new ForbiddenException('Only a player in this match can view it');
     }
+  }
 
-    private async assertMatchViewer(
-      manager: EntityManager,
-      match: Match,
-      userId: string,
-    ): Promise<'w' | 'b' | null> {
-      if (match.whitePlayerId === userId) {
-        return 'w';
-      }
-      if (match.blackPlayerId === userId) {
-        return 'b';
-      }
-
-      const user = await manager.getRepository(User).findOne({
-        where: { id: userId },
-        select: { id: true, role: true },
-      });
-      if (!user) {
-        throw new NotFoundException('User not found');
-      }
-      if (user.role !== UserRole.COACH && user.role !== UserRole.ADMIN) {
-        throw new ForbiddenException(
-          'Only match players, coaches, and admins can view this game',
-        );
-      }
-      return null;
+  private async assertMatchViewer(
+    manager: EntityManager,
+    match: Match,
+    userId: string,
+  ): Promise<'w' | 'b' | null> {
+    if (match.whitePlayerId === userId) {
+      return 'w';
     }
+    if (match.blackPlayerId === userId) {
+      return 'b';
+    }
+
+    const user = await manager.getRepository(User).findOne({
+      where: { id: userId },
+      select: { id: true, role: true },
+    });
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+    if (user.role !== UserRole.COACH && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Only match players, coaches, and admins can view this game',
+      );
+    }
+    return null;
   }
 
   private chessFor(pgn: string | null) {
