@@ -37,10 +37,17 @@ export class MatchesController {
   constructor(private readonly matchesService: MatchesService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create a chess match (coach/admin only)' })
+  @ApiOperation({
+    summary: 'Create a standalone chess match (coach/admin only)',
+    description:
+      'Tournament match pairings are generated automatically and cannot be created manually.',
+  })
   @ApiBody({ type: CreateMatchDto })
   @ApiResponse({ status: 201, description: 'Match created.' })
-  @ApiResponse({ status: 400, description: 'Invalid players, status, or result.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid players, status, result, or tournament pairing request.',
+  })
   @ApiResponse({ status: 401, description: 'Authentication required.' })
   @ApiResponse({ status: 403, description: 'Coach or admin role required.' })
   @ApiResponse({ status: 404, description: 'Player or tournament not found.' })

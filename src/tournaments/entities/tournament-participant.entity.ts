@@ -41,8 +41,11 @@ export class TournamentParticipant {
   })
   status: ParticipantStatus;
 
-  @Column({ type: 'int', default: 0 })
+  @Column({ type: 'double precision', default: 0 })
   points: number;
+
+  @Column({ type: 'int', default: 0 })
+  byeCount: number;
 
   @Column({ type: 'int', default: 0 })
   wins: number;

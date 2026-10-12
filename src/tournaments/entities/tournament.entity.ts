@@ -10,10 +10,9 @@ import { TournamentParticipant } from './tournament-participant.entity';
 
 export enum TournamentStatus {
   DRAFT = 'draft',
-  UPCOMING = 'upcoming',
-  ACTIVE = 'active',
+  OPEN = 'open',
+  ONGOING = 'ongoing',
   COMPLETED = 'completed',
-  CANCELLED = 'cancelled',
 }
 
 @Entity('tournaments')
@@ -23,6 +22,9 @@ export class Tournament {
 
   @Column({ length: 150 })
   name: string;
+
+  @Column({ length: 20, default: '5+0' })
+  timeControl: string;
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
@@ -45,6 +47,9 @@ export class Tournament {
     default: TournamentStatus.DRAFT,
   })
   status: TournamentStatus;
+
+  @Column({ type: 'int', default: 0 })
+  currentRound: number;
 
   @OneToMany(
     () => TournamentParticipant,

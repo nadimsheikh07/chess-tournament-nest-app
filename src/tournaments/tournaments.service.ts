@@ -5,8 +5,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
-
+import { DataSource, In, Repository } from 'typeorm';
+import { UserRole } from '../common/enums/user-role.enum';
+import { Match } from '../matches/entities/match.entity';
+import { User } from '../users/entities/user.entity';
 import { Tournament, TournamentStatus } from './entities/tournament.entity';
 import {
   ParticipantStatus,
@@ -15,6 +17,7 @@ import {
 import { CreateTournamentDto } from './dto/create-tournament.dto';
 import { UpdateTournamentDto } from './dto/update-tournament.dto';
 import { FindTournamentsDto } from './dto/find-tournaments.dto';
+import { TournamentPairingService } from './tournament-pairing.service';
 
 @Injectable()
 export class TournamentsService {
@@ -25,7 +28,11 @@ export class TournamentsService {
     @InjectRepository(TournamentParticipant)
     private readonly participantRepo: Repository<TournamentParticipant>,
 
+    @InjectRepository(User)
+    private readonly users: Repository<User>,
+
     private readonly dataSource: DataSource,
+    private readonly pairingService: TournamentPairingService,
   ) {}
 
   async create(coachId: string, dto: CreateTournamentDto) {
@@ -48,7 +55,7 @@ export class TournamentsService {
       coachId,
       startDate,
       endDate,
-      status: TournamentStatus.UPCOMING,
+      status: TournamentStatus.DRAFT,
     });
 
     return this.tournamentRepo.save(tournament);
@@ -131,16 +138,48 @@ export class TournamentsService {
   async update(id: string, coachId: string, dto: UpdateTournamentDto) {
     const tournament = await this.findOne(id);
 
-    if (tournament.coachId !== coachId) {
-      throw new ForbiddenException('You cannot update this tournament');
+    await this.assertManager(tournament.coachId, coachId);
+
+    if (
+      tournament.status === TournamentStatus.ONGOING ||
+      tournament.status === TournamentStatus.COMPLETED
+    ) {
+      throw new BadRequestException('This tournament can no longer be edited');
     }
 
     if (
-      tournament.status === TournamentStatus.ACTIVE ||
-      tournament.status === TournamentStatus.COMPLETED ||
-      tournament.status === TournamentStatus.CANCELLED
+      dto.status !== undefined &&
+      dto.status !== TournamentStatus.OPEN &&
+      dto.status !== TournamentStatus.DRAFT
     ) {
-      throw new BadRequestException('This tournament can no longer be edited');
+      throw new BadRequestException(
+        'Use the start action to begin a tournament',
+      );
+    }
+
+    if (
+      dto.status === TournamentStatus.DRAFT &&
+      tournament.status === TournamentStatus.OPEN
+    ) {
+      const participantCount = await this.participantRepo.count({
+        where: { tournamentId: id },
+      });
+      if (participantCount > 0) {
+        throw new BadRequestException(
+          'A tournament with participants cannot be returned to draft',
+        );
+      }
+    }
+
+    if (dto.maxParticipants !== undefined) {
+      const registeredCount = await this.participantRepo.count({
+        where: { tournamentId: id, status: ParticipantStatus.REGISTERED },
+      });
+      if (dto.maxParticipants < registeredCount) {
+        throw new BadRequestException(
+          'Maximum participants cannot be lower than the registered count',
+        );
+      }
     }
 
     const startDate = dto.startDate
@@ -170,6 +209,21 @@ export class TournamentsService {
     return this.tournamentRepo.save(tournament);
   }
 
+  async remove(id: string, coachId: string) {
+    const tournament = await this.findOne(id);
+    await this.assertManager(tournament.coachId, coachId);
+    if (
+      tournament.status === TournamentStatus.ONGOING ||
+      tournament.status === TournamentStatus.COMPLETED
+    ) {
+      throw new BadRequestException(
+        'An ongoing or completed tournament cannot be deleted',
+      );
+    }
+    await this.tournamentRepo.remove(tournament);
+    return { deleted: true, id };
+  }
+
   async join(tournamentId: string, userId: string) {
     return this.dataSource.transaction(async (manager) => {
       // Lock the tournament row to prevent concurrent registrations
@@ -183,7 +237,18 @@ export class TournamentsService {
         throw new NotFoundException('Tournament not found');
       }
 
-      if (tournament.status !== TournamentStatus.UPCOMING) {
+      const user = await manager.getRepository(User).findOne({
+        where: { id: userId },
+        select: { id: true, role: true },
+      });
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+      if (user.role !== UserRole.PLAYER) {
+        throw new ForbiddenException('Only students can join tournaments');
+      }
+
+      if (tournament.status !== TournamentStatus.OPEN) {
         throw new BadRequestException('Tournament registration is not open');
       }
 
@@ -241,17 +306,50 @@ export class TournamentsService {
   async getLeaderboard(tournamentId: string) {
     await this.findOne(tournamentId);
 
-    return this.participantRepo.find({
+    const participants = await this.participantRepo.find({
       where: {
         tournamentId,
-        status: ParticipantStatus.COMPLETED,
+        status: In([ParticipantStatus.REGISTERED, ParticipantStatus.COMPLETED]),
       },
       order: {
         points: 'DESC',
         wins: 'DESC',
         joinedAt: 'ASC',
+        id: 'ASC',
       },
     });
+    return participants.map((participant, index) => ({
+      ...participant,
+      rank: index + 1,
+    }));
+  }
+
+  async start(tournamentId: string, coachId: string) {
+    const tournament = await this.findOne(tournamentId);
+    await this.assertManager(tournament.coachId, coachId);
+    return this.pairingService.start(tournamentId);
+  }
+
+  async getMatches(tournamentId: string) {
+    await this.findOne(tournamentId);
+    return this.dataSource.getRepository(Match).find({
+      where: { tournamentId },
+      order: { roundNumber: 'ASC', createdAt: 'ASC', id: 'ASC' },
+    });
+  }
+
+  async getWinner(tournamentId: string) {
+    const tournament = await this.findOne(tournamentId);
+    if (tournament.status !== TournamentStatus.COMPLETED) {
+      throw new BadRequestException(
+        'The tournament winner is available after completion',
+      );
+    }
+    const [winner] = await this.getLeaderboard(tournamentId);
+    if (!winner) {
+      throw new NotFoundException('Tournament winner not found');
+    }
+    return winner;
   }
 
   async getMySchedule(userId: string) {
@@ -270,5 +368,21 @@ export class TournamentsService {
       participantStatus: registration.status,
       points: registration.points,
     }));
+  }
+
+  private async assertManager(ownerId: string, actorId: string) {
+    if (ownerId === actorId) {
+      return;
+    }
+    const actor = await this.users.findOne({
+      where: { id: actorId },
+      select: { id: true, role: true },
+    });
+    if (!actor) {
+      throw new NotFoundException('User not found');
+    }
+    if (actor.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('You cannot manage this tournament');
+    }
   }
 }

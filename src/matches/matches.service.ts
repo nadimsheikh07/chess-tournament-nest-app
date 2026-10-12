@@ -7,7 +7,11 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { UserRole } from '../common/enums/user-role.enum';
-import { Tournament } from '../tournaments/entities/tournament.entity';
+import {
+  Tournament,
+  TournamentStatus,
+} from '../tournaments/entities/tournament.entity';
+import { TournamentPairingService } from '../tournaments/tournament-pairing.service';
 import { User } from '../users/entities/user.entity';
 import { CreateMatchDto } from './dto/create-match.dto';
 import { FindMatchesDto } from './dto/find-matches.dto';
@@ -29,6 +33,7 @@ export class MatchesService {
     @InjectRepository(Tournament)
     private readonly tournaments: Repository<Tournament>,
     private readonly dataSource: DataSource,
+    private readonly tournamentPairing: TournamentPairingService,
   ) {}
 
   async create(actorId: string, dto: CreateMatchDto) {
@@ -41,17 +46,11 @@ export class MatchesService {
     );
     await this.assertPlayersExist(dto.whitePlayerId, dto.blackPlayerId);
 
-    if (dto.tournamentId) {
-      const exists = await this.tournaments.existsBy({ id: dto.tournamentId });
-      if (!exists) {
-        throw new NotFoundException('Tournament not found');
-      }
-    }
-
     return this.dataSource.transaction(async (manager) => {
       const match = manager.getRepository(Match).create({
         ...dto,
-        tournamentId: dto.tournamentId ?? null,
+        tournamentId: null,
+        roundNumber: null,
         status: dto.status ?? MatchStatus.SCHEDULED,
         result: dto.result ?? null,
         pgn: dto.pgn ?? null,
@@ -140,6 +139,23 @@ export class MatchesService {
   async update(actorId: string, id: string, dto: UpdateMatchDto) {
     await this.assertManager(actorId);
     const current = await this.findOne(id);
+    const tournament = current.tournamentId
+      ? await this.tournaments.findOneBy({ id: current.tournamentId })
+      : null;
+    if (
+      current.tournamentId &&
+      (dto.whitePlayerId !== undefined ||
+        dto.blackPlayerId !== undefined ||
+        tournament?.status === TournamentStatus.COMPLETED ||
+        (tournament &&
+          current.roundNumber !== null &&
+          current.roundNumber < tournament.currentRound) ||
+        dto.status === MatchStatus.CANCELLED)
+    ) {
+      throw new BadRequestException(
+        'Tournament pairings cannot be changed or cancelled',
+      );
+    }
     const whitePlayerId = dto.whitePlayerId ?? current.whitePlayerId;
     const blackPlayerId = dto.blackPlayerId ?? current.blackPlayerId;
     const status = dto.status ?? current.status;
@@ -158,23 +174,13 @@ export class MatchesService {
     );
     await this.assertPlayersExist(whitePlayerId, blackPlayerId);
 
-    if (dto.tournamentId) {
-      const exists = await this.tournaments.existsBy({ id: dto.tournamentId });
-      if (!exists) {
-        throw new NotFoundException('Tournament not found');
-      }
-    }
-
-    return this.dataSource.transaction(async (manager) => {
+    const saved = await this.dataSource.transaction(async (manager) => {
       Object.assign(current, dto, {
         whitePlayerId,
         blackPlayerId,
         status,
         result,
-        tournamentId:
-          dto.tournamentId === undefined
-            ? current.tournamentId
-            : dto.tournamentId,
+        tournamentId: current.tournamentId,
         pgn: dto.pgn === undefined ? current.pgn : dto.pgn,
         completedAt:
           status === MatchStatus.COMPLETED
@@ -187,11 +193,20 @@ export class MatchesService {
       await this.recalculateRatings(manager);
       return saved;
     });
+    if (saved.tournamentId) {
+      await this.tournamentPairing.afterMatchUpdate(saved.tournamentId);
+    }
+    return saved;
   }
 
   async remove(actorId: string, id: string) {
     await this.assertManager(actorId);
     const match = await this.findOne(id);
+    if (match.tournamentId) {
+      throw new BadRequestException(
+        'Tournament matches cannot be manually deleted',
+      );
+    }
     await this.dataSource.transaction(async (manager) => {
       await manager.getRepository(Match).remove(match);
       await this.recalculateRatings(manager);

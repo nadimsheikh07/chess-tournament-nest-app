@@ -25,16 +25,18 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        type: 'postgres' as const,
-        host: config.getOrThrow<string>('DATABASE_HOST'),
-        port: Number(config.get('DATABASE_PORT') ?? 5432),
-        username: config.getOrThrow<string>('DATABASE_USER'),
-        password: config.getOrThrow<string>('DATABASE_PASSWORD'),
-        database: config.getOrThrow<string>('DATABASE_NAME'),
-        autoLoadEntities: true,
-        synchronize: config.get('NODE_ENV') !== 'production',
-      }),
+      useFactory: (config: ConfigService) => {
+        return {
+          type: 'postgres' as const,
+          host: config.getOrThrow<string>('DATABASE_HOST'),
+          port: Number(config.get('DATABASE_PORT') ?? 5432),
+          username: config.getOrThrow<string>('DATABASE_USER'),
+          password: config.getOrThrow<string>('DATABASE_PASSWORD'),
+          database: config.getOrThrow<string>('DATABASE_NAME'),
+          autoLoadEntities: true,
+          synchronize: true,
+        };
+      },
     }),
     // Distributed tracing, auto-correlated logs, request/job metrics, error
     // telemetry, alarms, and more — out of the box. Sign up at https://observe.nestjs.com

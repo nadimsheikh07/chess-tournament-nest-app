@@ -71,7 +71,7 @@ export class FindTournamentsDto {
   @ApiPropertyOptional({
     description: 'Filter by tournament status',
     enum: TournamentStatus,
-    example: TournamentStatus.UPCOMING,
+    example: TournamentStatus.OPEN,
   })
   @IsOptional()
   @IsEnum(TournamentStatus)

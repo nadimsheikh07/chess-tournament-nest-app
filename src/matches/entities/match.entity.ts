@@ -25,6 +25,9 @@ export class Match {
   @Column({ type: 'uuid', nullable: true })
   tournamentId: string | null;
 
+  @Column({ type: 'int', nullable: true })
+  roundNumber: number | null;
+
   @Column({
     type: 'enum',
     enum: MatchStatus,

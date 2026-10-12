@@ -19,15 +19,6 @@ export class CreateMatchDto {
   blackPlayerId: string;
 
   @ApiPropertyOptional({
-    format: 'uuid',
-    nullable: true,
-    description: 'Optional tournament ID',
-  })
-  @IsOptional()
-  @IsUUID()
-  tournamentId?: string | null;
-
-  @ApiPropertyOptional({
     enum: MatchStatus,
     default: MatchStatus.SCHEDULED,
   })

@@ -30,8 +30,35 @@
 For frontend routes, authentication, roles, request/response examples, and
 query parameters, see the [Frontend API Guide](./docs/FRONTEND_API.md).
 
-All match and matchmaking endpoints require a bearer access token. Match
-creation, updates, and deletion are restricted to coaches and admins.
+All match and matchmaking endpoints require a bearer access token. Standalone
+match creation, updates, and deletion are restricted to coaches and admins.
+
+### Tournaments
+
+Coaches and admins can create and manage tournaments. A tournament starts in
+`draft`; update its `status` to `open` to allow players to self-join, then use
+`POST /tournaments/:id/start` to begin. Tournament creation accepts a
+`timeControl` in `minutes+increment` format (for example, `5+0`); it defaults
+to `5+0` when omitted.
+
+Pairings use Swiss-style rounds: players are grouped by score, repeat opponents
+are avoided when possible, and an odd field receives a bye. The number of
+rounds is `ceil(log2(registered participants))`. Each round is created
+automatically after all its matches are completed. Tournament matches cannot
+be manually created, reassigned, cancelled, or deleted.
+
+- `POST /tournaments` creates a draft; `GET /tournaments` lists tournaments.
+- `PATCH /tournaments/:id` updates a draft/open tournament, including changing
+  its status between `draft` and `open`; `DELETE /tournaments/:id` deletes a
+  draft/open tournament.
+- `POST /tournaments/:id/join` lets a player self-register while the tournament
+  is open. Registrations beyond `maxParticipants` are waitlisted.
+- `POST /tournaments/:id/start` generates round one and changes the status to
+  `ongoing`.
+- `GET /tournaments/:id/matches` lists all generated pairings and results.
+- `GET /tournaments/:id/leaderboard` returns current points and rankings.
+- `GET /tournaments/:id/winner` returns the top-ranked participant after the
+  tournament is `completed`.
 
 ### User management
 
@@ -46,8 +73,8 @@ Admin create/update requests accept the `role` values `player`, `coach`, and
 `admin`; passwords are hashed before storage. Users cannot change their own
 role through profile updates, and the last admin cannot be demoted or deleted.
 
-- `POST /matches` creates a scheduled match with `whitePlayerId`,
-  `blackPlayerId`, and an optional `tournamentId`.
+- `POST /matches` creates a standalone scheduled match with `whitePlayerId`
+  and `blackPlayerId`. Tournament matchups are generated automatically.
 - `GET /matches` and `GET /matches/:id` retrieve matches.
 - `PATCH /matches/:id` updates match details. Mark a match `completed` and
   provide `result` as `white_win`, `black_win`, or `draw` to record its result.
@@ -69,9 +96,10 @@ role through profile updates, and the last admin cannot be demoted or deleted.
 
 Players begin at 1200 Elo. Ratings are recalculated from completed match
 results whenever a match is created, updated, or deleted. Database schema
-synchronization is development-only; production deployments must add the
-`users.rating` column and the matches/matchmaking tables through a database
-migration before using these APIs.
+synchronization is enabled at startup in all environments, and the TypeORM
+entities define the database schema. Remove existing tables before starting if
+you want a clean schema reset. Schema synchronization can alter the database,
+so only use it in environments where automatic schema changes are acceptable.
 
 ## Project setup
 

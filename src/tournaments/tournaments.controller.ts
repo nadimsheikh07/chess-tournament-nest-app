@@ -1,8 +1,11 @@
 import {
   Body,
   Controller,
+  Delete,
+  ForbiddenException,
   Get,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -44,9 +47,7 @@ export class TournamentsController {
     const role = req.user?.role?.toLowerCase();
 
     if (role !== 'coach' && role !== 'admin') {
-      throw new (require('@nestjs/common').ForbiddenException)(
-        'Only coaches can manage tournaments',
-      );
+      throw new ForbiddenException('Only coaches can manage tournaments');
     }
   }
 
@@ -54,6 +55,18 @@ export class TournamentsController {
   create(@Req() req: AuthenticatedRequest, @Body() dto: CreateTournamentDto) {
     this.assertCoach(req);
     return this.tournamentsService.create(this.getUserId(req), dto);
+  }
+
+  @Post(':id/start')
+  @ApiOperation({
+    summary: 'Start an open tournament and create the first Swiss round',
+  })
+  start(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    this.assertCoach(req);
+    return this.tournamentsService.start(id, this.getUserId(req));
   }
 
   @Get()
@@ -72,7 +85,8 @@ export class TournamentsController {
             id: 'a1b2c3d4-1234-4567-8901-123456789abc',
             name: 'Kingdom Chess Championship',
             description: 'Open chess tournament',
-            status: 'upcoming',
+            status: 'open',
+            timeControl: '5+0',
             maxParticipants: 16,
             startDate: '2026-11-15T10:00:00.000Z',
             endDate: '2026-11-15T18:00:00.000Z',
@@ -100,14 +114,14 @@ export class TournamentsController {
   }
 
   @Get(':id')
-  findOne(@Param('id') id: string) {
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.tournamentsService.findOne(id);
   }
 
   @Patch(':id')
   update(
     @Req() req: AuthenticatedRequest,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTournamentDto,
   ) {
     this.assertCoach(req);
@@ -115,18 +129,41 @@ export class TournamentsController {
     return this.tournamentsService.update(id, this.getUserId(req), dto);
   }
 
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete a draft or open tournament (coach/admin)' })
+  remove(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    this.assertCoach(req);
+    return this.tournamentsService.remove(id, this.getUserId(req));
+  }
+
   @Post(':id/join')
-  join(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
+  join(
+    @Req() req: AuthenticatedRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
     return this.tournamentsService.join(id, this.getUserId(req));
   }
 
   @Get(':id/participants')
-  getParticipants(@Param('id') id: string) {
+  getParticipants(@Param('id', ParseUUIDPipe) id: string) {
     return this.tournamentsService.getParticipants(id);
   }
 
+  @Get(':id/matches')
+  getMatches(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tournamentsService.getMatches(id);
+  }
+
   @Get(':id/leaderboard')
-  getLeaderboard(@Param('id') id: string) {
+  getLeaderboard(@Param('id', ParseUUIDPipe) id: string) {
     return this.tournamentsService.getLeaderboard(id);
+  }
+
+  @Get(':id/winner')
+  getWinner(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tournamentsService.getWinner(id);
   }
 }

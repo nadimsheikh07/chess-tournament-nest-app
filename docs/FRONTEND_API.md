@@ -203,6 +203,8 @@ Example profile:
 
 All match endpoints require a bearer token. Match creation, update, and deletion
 are restricted to coaches and admins; any authenticated user can list/read them.
+Tournament games are paired automatically and cannot be created or reassigned
+through these routes.
 
 | Method | Path | Access | Description |
 | --- | --- | --- | --- |
@@ -218,7 +220,6 @@ Create body:
 {
   "whitePlayerId": "b6ef4a16-78e2-4b73-a7cc-c778c6bc5ab9",
   "blackPlayerId": "bf2a43ce-d151-45f1-a11f-54a236cdf7c8",
-  "tournamentId": null,
   "status": "scheduled",
   "pgn": null
 }
@@ -290,9 +291,9 @@ Rankings sort by rating, then points, wins, and name.
 
 ## Tournaments
 
-All tournament endpoints require a bearer token. Coaches/admins can create
-tournaments; updates are limited to the tournament's coach. Players can join
-upcoming tournaments. There is no tournament-delete route.
+All tournament endpoints require a bearer token. Coaches/admins can create,
+update, start, and delete their tournaments; admins can manage any tournament.
+Players can self-join tournaments while registration is open.
 
 | Method | Path | Access | Description |
 | --- | --- | --- | --- |
@@ -300,10 +301,14 @@ upcoming tournaments. There is no tournament-delete route.
 | `GET` | `/api/tournaments` | Authenticated | Searchable, sortable, paginated tournament list |
 | `GET` | `/api/tournaments/my-schedule` | Authenticated | Get own tournament schedule |
 | `GET` | `/api/tournaments/:id` | Authenticated | Get tournament details |
-| `PATCH` | `/api/tournaments/:id` | Owning coach/admin | Update tournament details |
+| `PATCH` | `/api/tournaments/:id` | Coach/admin | Update draft/open tournament, including status |
+| `DELETE` | `/api/tournaments/:id` | Coach/admin | Delete draft/open tournament |
+| `POST` | `/api/tournaments/:id/start` | Coach/admin | Start and automatically pair round one |
 | `POST` | `/api/tournaments/:id/join` | Authenticated | Register or join the waiting list |
 | `GET` | `/api/tournaments/:id/participants` | Authenticated | List participants |
-| `GET` | `/api/tournaments/:id/leaderboard` | Authenticated | List completed participants by score |
+| `GET` | `/api/tournaments/:id/matches` | Authenticated | List generated pairings and results |
+| `GET` | `/api/tournaments/:id/leaderboard` | Authenticated | List current standings and rankings |
+| `GET` | `/api/tournaments/:id/winner` | Authenticated | Get the winner after completion |
 
 Create body:
 
@@ -311,15 +316,24 @@ Create body:
 {
   "name": "Kingdom Chess Championship",
   "description": "Open chess tournament",
+  "timeControl": "5+0",
   "maxParticipants": 16,
   "startDate": "2026-11-15T10:00:00.000Z",
   "endDate": "2026-11-15T18:00:00.000Z"
 }
 ```
 
-Creation sets status to `upcoming`. Tournament statuses are `draft`, `upcoming`,
-`active`, `completed`, and `cancelled`. Registration is open only while status
-is `upcoming`; when full, new registrants get `waiting` participant status.
+Creation sets status to `draft`. Set status to `open` with `PATCH` to accept
+registrations; `POST /api/tournaments/:id/start` changes it to `ongoing` and
+generates Swiss-style rounds. The round count is
+`ceil(log2(registered participants))`; players with similar scores are paired,
+repeat opponents are avoided when possible, and an odd field receives a bye.
+New rounds start automatically when all matches in the current round are
+completed. Scores award 1 point for a win and 0.5 for a draw. The final round
+changes the status to `completed`; the winner is the first-ranked participant.
+Statuses are `draft`, `open`, `ongoing`, and `completed`. When full, new
+registrants get `waiting` participant status. `timeControl` uses
+`minutes+increment-seconds` format and defaults to `5+0`.
 Tournament list parameters: `page` (default `1`), `limit` (default `10`, max
 `100`), `search` (name or description), `sortBy` (`name`, `startDate`,
 `createdAt`, `maxParticipants`), `sortOrder` (`ASC`/`DESC`, default `ASC`), and
