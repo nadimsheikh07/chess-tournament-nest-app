@@ -41,7 +41,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
           },
 
           autoLoadEntities: true,
-          synchronize: false,
+          synchronize: true,
           retryAttempts: 5,
           retryDelay: 3000,
           extra: {
