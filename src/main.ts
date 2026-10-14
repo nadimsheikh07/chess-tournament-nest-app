@@ -5,7 +5,7 @@ import helmet from 'helmet';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ApiResponseInterceptor } from './common/interceptors/api-response.interceptor';
 
-async function bootstrap() {
+export async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     instrument: ObserveInstrument,
     snapshot: true,
@@ -38,7 +38,6 @@ async function bootstrap() {
     }),
   );
 
-  // Swagger configuration
   const config = new DocumentBuilder()
     .setTitle('Kingdom of Chess API')
     .setDescription('API documentation for the Kingdom of Chess backend')
@@ -51,9 +50,13 @@ async function bootstrap() {
   SwaggerModule.setup('api/v1/docs', app, document);
 
   await app.listen(process.env.PORT ?? 3000);
+
+  return app;
 }
 
-bootstrap().catch((error: unknown) => {
-  console.error('Failed to start the application', error);
-  process.exitCode = 1;
-});
+if (process.env.VERCEL !== '1') {
+  bootstrap().catch((error: unknown) => {
+    console.error('Failed to start the application', error);
+    process.exitCode = 1;
+  });
+}

@@ -38,10 +38,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
           autoLoadEntities: true,
           synchronize: true,
           ssl: {
-            ca: fs.readFileSync(
-              path.join(process.cwd(), 'certs', 'ca.pem'),
-              'utf8',
-            ),
+            ca: process.env.DATABASE_CA_CERT?.replace(/\\n/g, '\n'),
             rejectUnauthorized: true,
           },
         };
