@@ -27,12 +27,7 @@ export function setAuthCookies(
   tokens: IssuedAuthTokens,
   config: ConfigService,
 ) {
-  const cookieOptions = {
-    httpOnly: true,
-    secure: config.get<string>('NODE_ENV') === 'production',
-    sameSite: 'lax' as const,
-    path: '/',
-  };
+  const cookieOptions = getCookieOptions(config);
   const accessTtl = config.get<string>('JWT_ACCESS_TTL') ?? '15m';
   const refreshTtl = config.get<string>('JWT_REFRESH_TTL') ?? '7d';
   const accessMaxAge = durationMilliseconds(accessTtl);
@@ -49,14 +44,20 @@ export function setAuthCookies(
 }
 
 export function clearAuthCookies(response: Response, config: ConfigService) {
-  const cookieOptions = {
-    httpOnly: true,
-    secure: config.get<string>('NODE_ENV') === 'production',
-    sameSite: 'lax' as const,
-    path: '/',
-  };
+  const cookieOptions = getCookieOptions(config);
   response.clearCookie(ACCESS_TOKEN_COOKIE, cookieOptions);
   response.clearCookie(REFRESH_TOKEN_COOKIE, cookieOptions);
+}
+
+function getCookieOptions(config: ConfigService) {
+  const isProduction = config.get<string>('NODE_ENV') === 'production';
+  const cookieOptions = {
+    httpOnly: true,
+    secure: isProduction,
+    sameSite: isProduction ? ('none' as const) : ('lax' as const),
+    path: '/',
+  };
+  return cookieOptions;
 }
 
 function durationMilliseconds(value: string): number | undefined {
