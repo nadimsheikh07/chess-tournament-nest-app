@@ -11,6 +11,8 @@ import { MatchmakingModule } from './matchmaking/matchmaking.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DevtoolsModule } from '@nestjs/devtools-integration';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -35,6 +37,13 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
           database: config.getOrThrow<string>('DATABASE_NAME'),
           autoLoadEntities: true,
           synchronize: true,
+          ssl: {
+            ca: fs.readFileSync(
+              path.join(process.cwd(), 'certs', 'ca.pem'),
+              'utf8',
+            ),
+            rejectUnauthorized: true,
+          },
         };
       },
     }),
