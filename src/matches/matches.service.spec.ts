@@ -4,6 +4,7 @@ import { User } from '../users/entities/user.entity';
 import { UserRole } from '../common/enums/user-role.enum';
 import { TournamentPairingService } from '../tournaments/tournament-pairing.service';
 import { Tournament } from '../tournaments/entities/tournament.entity';
+import { FindMatchesDto } from './dto/find-matches.dto';
 import { Match } from './entities/match.entity';
 import { MatchResult } from './entities/match-result.enum';
 import { MatchStatus } from './entities/match-status.enum';
@@ -42,11 +43,13 @@ describe('MatchesService live games', () => {
     findOne: ReturnType<typeof vi.fn>;
     find: ReturnType<typeof vi.fn>;
     save: ReturnType<typeof vi.fn>;
+    createQueryBuilder: ReturnType<typeof vi.fn>;
   };
   let userRepository: {
     find: ReturnType<typeof vi.fn>;
     findOne: ReturnType<typeof vi.fn>;
   };
+  let tournamentRepository: { find: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -55,10 +58,14 @@ describe('MatchesService live games', () => {
       findOne: vi.fn(),
       find: vi.fn().mockResolvedValue([]),
       save: vi.fn(async (match: Match) => match),
+      createQueryBuilder: vi.fn(),
     };
     userRepository = {
       find: vi.fn().mockResolvedValue([]),
       findOne: vi.fn().mockResolvedValue(null),
+    };
+    tournamentRepository = {
+      find: vi.fn().mockResolvedValue([]),
     };
     const manager = {
       getRepository: vi.fn((entity: typeof Match | typeof User) =>
@@ -76,7 +83,7 @@ describe('MatchesService live games', () => {
     service = new MatchesService(
       matchRepository as unknown as Repository<Match>,
       userRepository as unknown as Repository<User>,
-      {} as Repository<Tournament>,
+      tournamentRepository as unknown as Repository<Tournament>,
       dataSource as unknown as DataSource,
       pairingService as unknown as TournamentPairingService,
     );
@@ -84,6 +91,32 @@ describe('MatchesService live games', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('includes tournament names in the matches list response', async () => {
+    const tournamentId = '44444444-4444-4444-8444-444444444444';
+    const match = createMatch({ tournamentId });
+    const queryBuilder = {
+      andWhere: vi.fn().mockReturnThis(),
+      orderBy: vi.fn().mockReturnThis(),
+      addOrderBy: vi.fn().mockReturnThis(),
+      skip: vi.fn().mockReturnThis(),
+      take: vi.fn().mockReturnThis(),
+      getManyAndCount: vi.fn().mockResolvedValue([[match], 1]),
+    };
+    matchRepository.createQueryBuilder.mockReturnValue(queryBuilder);
+    tournamentRepository.find.mockResolvedValue([
+      { id: tournamentId, name: 'Autumn Open' },
+    ]);
+
+    const response = await service.findAll(new FindMatchesDto());
+
+    expect(response.data).toEqual([
+      expect.objectContaining({
+        tournamentId,
+        tournamentName: 'Autumn Open',
+      }),
+    ]);
   });
 
   it('starts a scheduled game and returns legal moves, clock, and PGN history', async () => {

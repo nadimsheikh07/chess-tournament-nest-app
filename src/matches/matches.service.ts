@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Chess } from 'chess.js';
 import { UserRole } from '../common/enums/user-role.enum';
 import {
@@ -122,7 +122,31 @@ export class MatchesService {
       .skip((query.page - 1) * query.limit)
       .take(query.limit);
 
-    const [data, total] = await queryBuilder.getManyAndCount();
+    const [matches, total] = await queryBuilder.getManyAndCount();
+    const tournamentIds = [
+      ...new Set(
+        matches
+          .map((match) => match.tournamentId)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    const tournaments = tournamentIds.length
+      ? await this.tournaments.find({
+          select: { id: true, name: true },
+          where: { id: In(tournamentIds) },
+        })
+      : [];
+    const tournamentNames = new Map(
+      tournaments.map((tournament) => [tournament.id, tournament.name]),
+    );
+    const data = matches.map((match) =>
+      Object.assign(match, {
+        tournamentName: match.tournamentId
+          ? (tournamentNames.get(match.tournamentId) ?? null)
+          : null,
+      }),
+    );
+
     return {
       data,
       meta: {
