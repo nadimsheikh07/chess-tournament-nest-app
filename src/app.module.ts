@@ -35,12 +35,18 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
           username: config.getOrThrow<string>('DATABASE_USER'),
           password: config.getOrThrow<string>('DATABASE_PASSWORD'),
           database: config.getOrThrow<string>('DATABASE_NAME'),
+
+          ssl: {
+            rejectUnauthorized: false,
+          },
+
           autoLoadEntities: true,
-          synchronize: true,
-          // ssl: {
-          //   ca: process.env.DATABASE_CA_CERT?.replace(/\\n/g, '\n'),
-          //   rejectUnauthorized: true,
-          // },
+          synchronize: false,
+          retryAttempts: 5,
+          retryDelay: 3000,
+          extra: {
+            connectionTimeoutMillis: 15000,
+          },
         };
       },
     }),
