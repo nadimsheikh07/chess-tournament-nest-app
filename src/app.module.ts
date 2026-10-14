@@ -37,10 +37,10 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
           database: config.getOrThrow<string>('DATABASE_NAME'),
           autoLoadEntities: true,
           synchronize: true,
-          ssl: {
-            ca: process.env.DATABASE_CA_CERT?.replace(/\\n/g, '\n'),
-            rejectUnauthorized: true,
-          },
+          // ssl: {
+          //   ca: process.env.DATABASE_CA_CERT?.replace(/\\n/g, '\n'),
+          //   rejectUnauthorized: true,
+          // },
         };
       },
     }),
