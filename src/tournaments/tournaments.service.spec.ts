@@ -14,8 +14,12 @@ import { TournamentsService } from './tournaments.service';
 describe('TournamentsService', () => {
   let service: TournamentsService;
   let tournamentRepository: { findOne: ReturnType<typeof vi.fn> };
-  let userRepository: { findOne: ReturnType<typeof vi.fn> };
+  let userRepository: {
+    find: ReturnType<typeof vi.fn>;
+    findOne: ReturnType<typeof vi.fn>;
+  };
   let participantRepository: {
+    find: ReturnType<typeof vi.fn>;
     findOne: ReturnType<typeof vi.fn>;
     count: ReturnType<typeof vi.fn>;
     create: ReturnType<typeof vi.fn>;
@@ -31,12 +35,14 @@ describe('TournamentsService', () => {
       }),
     };
     userRepository = {
+      find: vi.fn().mockResolvedValue([]),
       findOne: vi.fn().mockResolvedValue({
         id: 'player',
         role: UserRole.PLAYER,
       }),
     };
     participantRepository = {
+      find: vi.fn().mockResolvedValue([]),
       findOne: vi.fn().mockResolvedValue(null),
       count: vi.fn().mockResolvedValue(0),
       create: vi.fn((participant) => participant),
@@ -121,5 +127,31 @@ describe('TournamentsService', () => {
     await expect(service.join('tournament', 'player')).rejects.toBeInstanceOf(
       BadRequestException,
     );
+  });
+
+  it('returns participant names with tournament participants', async () => {
+    participantRepository.find.mockResolvedValue([
+      { userId: 'player', status: ParticipantStatus.REGISTERED },
+    ]);
+    userRepository.find.mockResolvedValue([{ id: 'player', name: 'Alex' }]);
+
+    await expect(service.getParticipants('tournament')).resolves.toEqual([
+      expect.objectContaining({ userId: 'player', name: 'Alex' }),
+    ]);
+  });
+
+  it('returns participant names with leaderboard standings', async () => {
+    participantRepository.find.mockResolvedValue([
+      { userId: 'player', status: ParticipantStatus.REGISTERED },
+    ]);
+    userRepository.find.mockResolvedValue([{ id: 'player', name: 'Alex' }]);
+
+    await expect(service.getLeaderboard('tournament')).resolves.toEqual([
+      expect.objectContaining({
+        userId: 'player',
+        name: 'Alex',
+        rank: 1,
+      }),
+    ]);
   });
 });

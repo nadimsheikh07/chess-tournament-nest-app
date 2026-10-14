@@ -293,7 +293,7 @@ export class TournamentsService {
   async getParticipants(tournamentId: string) {
     await this.findOne(tournamentId);
 
-    return this.participantRepo.find({
+    const participants = await this.participantRepo.find({
       where: { tournamentId },
       order: {
         points: 'DESC',
@@ -301,6 +301,7 @@ export class TournamentsService {
         joinedAt: 'ASC',
       },
     });
+    return this.attachParticipantNames(participants);
   }
 
   async getLeaderboard(tournamentId: string) {
@@ -318,7 +319,8 @@ export class TournamentsService {
         id: 'ASC',
       },
     });
-    return participants.map((participant, index) => ({
+    const participantsWithNames = await this.attachParticipantNames(participants);
+    return participantsWithNames.map((participant, index) => ({
       ...participant,
       rank: index + 1,
     }));
@@ -368,6 +370,26 @@ export class TournamentsService {
       participantStatus: registration.status,
       points: registration.points,
     }));
+  }
+
+  private async attachParticipantNames(
+    participants: TournamentParticipant[],
+  ): Promise<Array<TournamentParticipant & { name: string }>> {
+    if (participants.length === 0) {
+      return [];
+    }
+
+    const users = await this.users.find({
+      select: { id: true, name: true },
+      where: { id: In(participants.map((participant) => participant.userId)) },
+    });
+    const namesByUserId = new Map(users.map((user) => [user.id, user.name]));
+
+    return participants.map((participant) =>
+      Object.assign(participant, {
+        name: namesByUserId.get(participant.userId) ?? participant.userId,
+      }),
+    );
   }
 
   private async assertManager(ownerId: string, actorId: string) {
